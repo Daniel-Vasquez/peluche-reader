@@ -13,10 +13,11 @@ const PatchSchema = z.object({
   scheduledDays: z
     .array(
       z
-        .number()
+        .number({ message: 'Los días deben ser números.' })
         .int('Los días deben ser números enteros.')
         .min(1, 'Día de la semana inválido: debe estar entre 1 (lunes) y 7 (domingo).')
         .max(7, 'Día de la semana inválido: debe estar entre 1 (lunes) y 7 (domingo).'),
+      { message: 'Los días deben venir en una lista.' },
     )
     .min(1, 'Elige al menos un día de la semana.')
     .max(7)
@@ -24,13 +25,13 @@ const PatchSchema = z.object({
     .optional(),
 
   timezone: z
-    .string()
+    .string({ message: 'La zona horaria debe ser texto.' })
     .refine(isValidTimezone, 'Zona horaria no reconocida.')
     .optional(),
 
   dailyGoalMinutes: z
-    .number()
-    .int()
+    .number({ message: 'La meta debe ser un número de minutos.' })
+    .int('La meta debe ser un número entero de minutos.')
     .refine(
       (m) => (GOAL_OPTIONS as readonly number[]).includes(m),
       `La meta debe ser una de: ${GOAL_OPTIONS.join(', ')} minutos.`,
@@ -38,7 +39,7 @@ const PatchSchema = z.object({
     .optional(),
 
   currentBookTitle: z
-    .string()
+    .string({ message: 'El título del libro debe ser texto.' })
     .max(160, 'El título no puede pasar de 160 caracteres.')
     .transform((t) => t.trim())
     // Un título vacío se guarda como null, no como "".

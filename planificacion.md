@@ -90,6 +90,16 @@ títulos con peso ("El refugio de Daniel Vásquez").
    `readEnvOr`). **Nunca `process.env.X` directo.** Motivo en 0.5.
 12. **Nunca muestres el correo donde quepa el nombre.** La personalización usa
    `user.name` (ver 0.3); el correo solo aparece como dato de la cuenta.
+13. **Todo mensaje de Zod, en español — y también el del tipo.** Zod emite los
+   suyos en inglés. Poner el texto solo en `.min()` / `.max()` no basta: si el
+   campo **falta** o llega con **otro tipo**, esos refinamientos no se evalúan y
+   responde `"Invalid input: expected string, received undefined"`. El mensaje va
+   en el constructor:
+   ```ts
+   z.string({ message: 'Falta el identificador de la sesión.' }).min(1, '…')
+   z.number({ message: 'La meta debe ser un número de minutos.' }).int('…')
+   z.array(z.number({ message: '…' }), { message: 'Los días deben venir en una lista.' })
+   ```
 
 ### 0.5 Las variables de entorno privadas NO están en `process.env`
 
@@ -159,8 +169,10 @@ reading-app/
     ├── lib/
     │   ├── auth.ts               # instancia servidor Better Auth
     │   ├── auth-client.ts        # cliente React
+    │   ├── api.ts                # helpers de respuesta JSON de los endpoints
     │   ├── env.ts                # lector de variables (process.env + import.meta.env)
     │   ├── name.ts               # reglas del nombre (cliente + servidor)
+    │   ├── sessions-view.ts      # forma de la sesión que viaja al navegador
     │   ├── time.ts               # dayKey / weekKey / ISO weekday
     │   ├── db/
     │   │   ├── client.ts         # conexión cacheada
@@ -1243,11 +1255,37 @@ El navegador no es de fiar (pestaña dormida, reloj cambiado, F5). Por eso:
 
 ```ts
 // src/lib/repos/sessions.ts
-export function elapsedSeconds(s: ReadingSessionDoc, now = new Date()): number {
-  const live = s.lastResumedAt ? Math.floor((+now - +s.lastResumedAt) / 1000) : 0;
-  return s.accumulatedSeconds + Math.max(0, live);
+export const MIN_SESSION_SECONDS = 60;
+export const STALE_SESSION_HOURS = 6;
+
+export function elapsedSeconds(session: ReadingSessionDoc, now = new Date()): number {
+  const live = session.lastResumedAt
+    ? Math.floor((now.getTime() - session.lastResumedAt.getTime()) / 1000)
+    : 0;
+  return session.accumulatedSeconds + Math.max(0, live);
 }
 ```
+
+El repo expone además `findOpenSession`, `abandonStaleSessions`, `startSession`,
+`pauseSession`, `resumeSession`, `finishSession` y `completedSecondsForDay`.
+
+**`pause` / `resume` / `finish` son idempotentes** y filtran por estado en el
+propio `findOneAndUpdate` (`{ _id, status: 'running' }`): así dos pestañas
+pulsando "Pausar" a la vez no pueden consolidar el tramo dos veces.
+
+**Las sesiones viejas no regalan tiempo.** `abandonStaleSessions` cierra las
+abiertas hace más de `STALE_SESSION_HOURS` acreditando **solo
+`accumulatedSeconds`**, nunca el tramo en curso: el usuario cerró la pestaña y se
+fue, no estuvo leyendo 8 horas. `/app` la llama antes de ofrecer retomar una
+sesión.
+
+**`src/lib/sessions-view.ts`** define `SessionView`, la forma que viaja al
+navegador: `{ id, dayKey, bookTitle, status, elapsedSeconds, running, startedAt }`.
+El cliente no recalcula nada, solo adopta lo que llega.
+
+**`src/lib/api.ts`** centraliza `json()`, `unauthorized()`, `badRequest()`,
+`notFound()` y `readJson()`, para que los endpoints no repitan cabeceras ni
+literales de error.
 
 ### Endpoints
 
@@ -1257,24 +1295,54 @@ export function elapsedSeconds(s: ReadingSessionDoc, now = new Date()): number {
 | `/api/sessions/heartbeat` | POST | `{ sessionId, action: 'pause' \| 'resume' \| 'ping' }` | `pause`: suma el tramo a `accumulatedSeconds`, pone `lastResumedAt = null`. `resume`: `lastResumedAt = now`. `ping`: solo devuelve el estado (anti-desfase, cada 30 s). |
 | `/api/sessions/finish` | POST | `{ sessionId }` | Cierra: `durationSeconds = elapsedSeconds()`, `status = 'completed'`, `endedAt = now`. **Devuelve el documento cerrado.** (En la Tanda 7 este endpoint además liquidará perritos.) |
 
-Todos: `export const prerender = false;`, verifican `locals.user`, y comprueban
-que `session.userId === locals.user.id` (nunca confíes en el `sessionId` del
-cliente sin validar pertenencia).
+Todos: `export const prerender = false;`, verifican `locals.user`, y **meten el
+`userId` en el propio filtro de Mongo**:
 
-**Regla anti-abuso**: en `finish`, si `durationSeconds < 60` la sesión se marca
-`abandoned` y no cuenta para nada.
+```ts
+const session = await sessions.findOne({
+  _id: new ObjectId(parsed.data.sessionId),
+  userId: locals.user.id,     // nunca confíes en el sessionId del cliente
+});
+if (!session) return notFound('No encontramos esa sesión.');
+```
+
+Así una sesión ajena es indistinguible de una inexistente: no se filtra si
+existe. **Verificado**: un segundo usuario con el `sessionId` de la víctima recibe
+404 en `heartbeat` y en `finish`, y la sesión de la víctima sigue corriendo.
+
+Valida también que el `sessionId` sea un ObjectId (`ObjectId.isValid`) antes de
+construirlo: con una cadena arbitraria, el constructor lanza y el endpoint
+devolvería 500 en vez de 400.
+
+**Regla anti-abuso**: en `finish`, si la duración es menor que
+`MIN_SESSION_SECONDS` la sesión se marca `abandoned` y no cuenta para nada. La
+respuesta incluye `counted: false` para que la UI lo explique.
 
 ### `src/components/ReadingTimer.tsx`
 Máquina de estados explícita: `idle → running ⇄ paused → finished`.
-- `useRef` + `setInterval(1000)` solo para pintar; nunca para acumular verdad.
-- Re-sincroniza con `heartbeat: 'ping'` cada 30 s y al volver a la pestaña
-  (`document.visibilitychange`).
+
+- **El intervalo local solo pinta.** Cada tick suma 1 s al número mostrado; la
+  única vía por la que el tiempo cambia de verdad es `adopt(serverSession)`.
+- Re-sincroniza con `heartbeat: 'ping'` **cada 30 s y al volver a la pestaña**
+  (`document.visibilitychange`): el `setInterval` del navegador se congela cuando
+  la pestaña duerme, así que el contador local se desvía del tiempo real.
+- El `sessionId` vive también en un `useRef`, porque los intervalos capturarían
+  un valor obsoleto del estado.
 - `beforeunload` **no** llama a `finish` (perdería tiempo válido); la sesión
   queda abierta y `start` la recupera.
-- Muestra `MM:SS`, un anillo de progreso hacia la meta diaria, y marcas visuales
-  en 10 / 15 / 20 / 25 / 30 min (los umbrales de recompensa de la Tanda 6).
-- Botones: **Empezar** (primary), **Pausar / Reanudar** (ghost),
-  **Terminar sesión** (primary, deshabilitado bajo 60 s).
+- Muestra `MM:SS` dentro de un anillo SVG de progreso hacia la meta, y una fila
+  con los cinco escalones de recompensa (10 / 15 / 20 / 25 / 30 min) que se
+  encienden al alcanzarlos: es el "un bloque más" que alarga la sesión.
+- El anillo usa `var(--color-primary-bright)` sobre `var(--color-muted)`, leídos
+  del sistema de tokens, así que sigue el tema sin variantes `dark:`.
+- `role="timer"` con **`aria-live="off"`**: anunciar un contador cada segundo
+  sería insufrible con lector de pantalla. Los cambios de estado sí se anuncian,
+  en un `role="status"` aparte.
+- Botones: **Empezar a leer** (primary), **Pausar / Reanudar** (ghost),
+  **Terminar sesión** (primary, deshabilitado bajo `minSessionSeconds`).
+
+`REWARD_STEPS` vive provisionalmente en `game/preview.ts` con los cinco escalones
+y sus perritos; en la Tanda 6 pasa a derivarse de `dogsForMinutes()`.
 
 ### Ejemplo de documento de sesión
 ```json
@@ -1301,8 +1369,24 @@ Nada. Pruébalo iniciando una sesión, pausando 30 s y terminando: el tiempo
 mostrado debe coincidir con `durationSeconds` en Mongo.
 
 ### Criterio de aceptación
-Recargar la página a mitad de sesión recupera el cronómetro en curso con el
-tiempo correcto.
+Todo esto se comprueba contra el servidor, no por inspección del código:
+
+- `start` dos veces devuelve **la misma** sesión con `resumed: true`.
+- El tiempo avanza: dos `ping` separados 3 s dan +3 s.
+- **La pausa no cuenta.** Medición limpia de 4 s leyendo + 5 s en pausa + 4 s
+  leyendo: reloj de pared 14.1 s, tiempo registrado **8 s**.
+- `pause` dos veces seguidas no pierde ni duplica tiempo.
+- Una sesión de 300 s cierra como `completed` con `counted: true`, y
+  `daySeconds` acumula 300.
+- Una sesión de menos de 60 s cierra como `abandoned`, `counted: false`, y
+  `daySeconds` sigue en 0.
+- Una sesión abierta hace 8 h con 42 s acumulados se cierra como `abandoned`
+  acreditando **42 s**, no 8 h; y el cronómetro arranca en reposo.
+- El `sessionId` de otro usuario → 404 en `heartbeat` y `finish`.
+- Los tres endpoints sin sesión → 401.
+- Todos los errores de validación responden **en español** (ver convención 13).
+- Recargar a mitad de sesión recupera el cronómetro: `/app` pasa la sesión
+  abierta como prop con su `elapsedSeconds` y `running` correctos.
 
 ---
 

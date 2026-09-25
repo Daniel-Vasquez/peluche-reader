@@ -43,7 +43,7 @@ npm run dev              # http://localhost:4321
 - [x] **Tanda 2** · Autenticación (Better Auth, email + contraseña)
 - [x] **Tanda 3** · Shell de la app, tema claro/oscuro y primitivas de UI
 - [x] **Tanda 4** · Perfil, días comprometidos y edición del nombre
-- [ ] Tanda 5 · Cronómetro de lectura
+- [x] **Tanda 5** · Cronómetro de sesión (tiempo autoritativo en el servidor)
 - [ ] Tanda 6 · Motor de gamificación
 - [ ] Tanda 7 · Integración
 - [ ] Tanda 8 · Dashboard de progreso
