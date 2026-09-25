@@ -149,8 +149,19 @@ export default function ReadingTimer({
 
   const goalSeconds = dailyGoalMinutes * 60;
   const progress = Math.min(1, goalSeconds > 0 ? displaySeconds / goalSeconds : 0);
-  const canFinish = displaySeconds >= minSessionSeconds;
   const minutesNow = Math.floor(displaySeconds / 60);
+
+  /**
+   * Cuánto falta para que la sesión puntúe. El botón de terminar **nunca** se
+   * bloquea: quien empieza tiene que poder parar. La regla del mínimo ya la
+   * aplica el servidor (marca `abandoned` y devuelve `counted: false`), así que
+   * aquí solo hay que avisar de la consecuencia.
+   *
+   * Bloquearlo era una trampa: en pausa el reloj no avanza, así que una sesión
+   * pausada antes del minuto se quedaba sin salida.
+   */
+  const secondsToCount = Math.max(0, minSessionSeconds - displaySeconds);
+  const willCount = secondsToCount === 0;
 
   // Anillo de progreso: circunferencia = 2πr, con r = 54.
   const radius = 54;
@@ -213,6 +224,14 @@ export default function ReadingTimer({
         })}
       </ol>
 
+      {!willCount && (phase === 'running' || phase === 'paused') && (
+        <p className="mt-4 text-sm text-text-soft">
+          Todavía no cuenta: faltan{' '}
+          <span className="font-medium text-text tabular-nums">{secondsToCount} s</span> para el
+          mínimo de {Math.round(minSessionSeconds / 60)} min.
+        </p>
+      )}
+
       <p role="status" className="mt-4 min-h-6 text-sm text-text-soft">
         {phase === 'idle' && lastResult === null && 'Cuando quieras, empieza a leer.'}
         {phase === 'running' && 'Leyendo…'}
@@ -242,11 +261,7 @@ export default function ReadingTimer({
             <Button variant="ghost" onClick={handleToggle} disabled={busy}>
               {running ? 'Pausar' : 'Reanudar'}
             </Button>
-            <Button
-              onClick={handleFinish}
-              disabled={busy || !canFinish}
-              title={canFinish ? undefined : `Necesitas al menos ${minSessionSeconds} segundos`}
-            >
+            <Button onClick={handleFinish} disabled={busy}>
               Terminar sesión
             </Button>
           </>

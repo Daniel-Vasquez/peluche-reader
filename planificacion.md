@@ -1364,7 +1364,36 @@ Máquina de estados explícita: `idle → running ⇄ paused → finished`.
   sería insufrible con lector de pantalla. Los cambios de estado sí se anuncian,
   en un `role="status"` aparte.
 - Botones: **Empezar a leer** (primary), **Pausar / Reanudar** (ghost),
-  **Terminar sesión** (primary, deshabilitado bajo `minSessionSeconds`).
+  **Terminar sesión** (primary).
+
+#### ⚠️ "Terminar sesión" NUNCA se deshabilita
+
+Bloquearlo por debajo de `MIN_SESSION_SECONDS` es una **trampa sin salida**: en
+pausa el reloj no avanza, así que una sesión pausada a los 2 s no alcanzaba nunca
+el mínimo y el usuario se quedaba con «Reanudar» como única opción.
+
+La regla la aplica **el servidor**, que marca la sesión `abandoned` y responde
+`counted: false`. El trabajo de la interfaz es **avisar de la consecuencia**, no
+impedir la acción:
+
+```tsx
+const secondsToCount = Math.max(0, minSessionSeconds - displaySeconds);
+const willCount = secondsToCount === 0;
+
+// El botón solo se bloquea mientras hay una petición en vuelo.
+<Button onClick={handleFinish} disabled={busy}>Terminar sesión</Button>
+
+{!willCount && (phase === 'running' || phase === 'paused') && (
+  <p>Todavía no cuenta: faltan {secondsToCount} s para el mínimo de 1 min.</p>
+)}
+```
+
+El aviso es **texto visible**, no un `title`: un tooltip exige pasar el ratón y no
+existe en móvil.
+
+> **Regla general para el resto de las tandas**: no deshabilites un control para
+> hacer cumplir una regla que el servidor ya valida. Deja pulsar y explica el
+> resultado. Un botón deshabilitado sin motivo visible parece una app rota.
 
 `REWARD_STEPS` vive provisionalmente en `game/preview.ts` con los cinco escalones
 y sus perritos; en la Tanda 6 pasa a derivarse de `dogsForMinutes()`.
@@ -1412,6 +1441,9 @@ Todo esto se comprueba contra el servidor, no por inspección del código:
 - Todos los errores de validación responden **en español** (ver convención 13).
 - Recargar a mitad de sesión recupera el cronómetro: `/app` pasa la sesión
   abierta como prop con su `elapsedSeconds` y `running` correctos.
+- **Pausar a los 2 s y pulsar "Terminar sesión" funciona**: cierra como
+  `abandoned` y el estado dice "Sesión demasiado corta (menos de 1 min): no
+  cuenta." Ningún botón queda bloqueado sin explicación visible.
 
 ---
 
