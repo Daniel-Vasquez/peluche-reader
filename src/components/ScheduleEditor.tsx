@@ -23,9 +23,7 @@ const inputClass =
   'w-full rounded-card border border-border bg-surface px-3.5 py-2.5 text-text ' +
   'placeholder:text-text-soft transition focus:border-primary';
 
-type Status = 'idle' | 'saving' | 'saved';
-
-/** Inicio de la app con sesión. Destino tras guardar. */
+/** Inicio de la app con sesión. Solo se usa al terminar el onboarding. */
 const HOME_PATH = '/app';
 
 export default function ScheduleEditor({
@@ -37,11 +35,25 @@ export default function ScheduleEditor({
   goalOptions,
   onboarding,
 }: Props) {
+  const [isSaving, setIsSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+
+  /**
+   * Últimos valores confirmados por el servidor. Se actualizan al guardar con
+   * éxito, y son contra lo que se compara `dirty`: así el aviso de "cambios sin
+   * guardar" desaparece solo, sin recargar la página.
+   */
+  const [saved, setSaved] = useState({
+    name: initialName,
+    days: initialScheduledDays,
+    goal: initialDailyGoalMinutes,
+    book: initialBookTitle ?? '',
+  });
+
   const [name, setName] = useState(initialName);
   const [days, setDays] = useState<IsoWeekday[]>(initialScheduledDays);
   const [goal, setGoal] = useState(initialDailyGoalMinutes);
   const [book, setBook] = useState(initialBookTitle ?? '');
-  const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string | null>(null);
 
   /**
@@ -68,12 +80,12 @@ export default function ScheduleEditor({
    * por contenido, no por identidad del array.
    */
   const dirty =
-    status === 'idle' &&
-    (name.trim() !== initialName.trim() ||
-      goal !== initialDailyGoalMinutes ||
-      book.trim() !== (initialBookTitle ?? '').trim() ||
-      days.length !== initialScheduledDays.length ||
-      days.some((d, i) => d !== initialScheduledDays[i]));
+    !isSaving &&
+    (name.trim() !== saved.name.trim() ||
+      goal !== saved.goal ||
+      book.trim() !== saved.book.trim() ||
+      days.length !== saved.days.length ||
+      days.some((d, i) => d !== saved.days[i]));
 
   /*
    * Aviso del navegador al cerrar o recargar con cambios pendientes. No cubre la
@@ -88,7 +100,7 @@ export default function ScheduleEditor({
   }, [dirty]);
 
   function toggleDay(day: IsoWeekday) {
-    setStatus('idle');
+    setJustSaved(false);
     setDays((current) =>
       current.includes(day)
         ? current.filter((d) => d !== day)
@@ -98,7 +110,7 @@ export default function ScheduleEditor({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (status === 'saving') return;
+    if (isSaving) return;
 
     const nameCheck = checkName(name);
     if (!nameCheck.ok) {
@@ -110,52 +122,72 @@ export default function ScheduleEditor({
       return;
     }
 
-    setStatus('saving');
+    setIsSaving(true);
+    setJustSaved(false);
     setError(null);
 
-    // El nombre vive en la colección de Better Auth, no en el perfil: se
-    // actualiza por su API y solo si de verdad cambió.
-    const nameChanged = nameCheck.name !== initialName;
-    if (nameChanged) {
-      const { error: nameError } = await authClient.updateUser({ name: nameCheck.name });
-      if (nameError) {
-        setError(nameError.message ?? 'No pudimos guardar tu nombre.');
-        setStatus('idle');
+    try {
+      // El nombre vive en la colección de Better Auth, no en el perfil: se
+      // actualiza por su API y solo si de verdad cambió.
+      const nameChanged = nameCheck.name !== saved.name;
+      if (nameChanged) {
+        const { error: nameError } = await authClient.updateUser({ name: nameCheck.name });
+        if (nameError) {
+          setError(nameError.message ?? 'No pudimos guardar tu nombre.');
+          return;
+        }
+
+        // La sesión va cacheada en la cookie durante 5 minutos, así que
+        // `updateUser` por sí solo NO refresca lo que ve el servidor: sin esta
+        // llamada, recargar seguiría mostrando el nombre anterior. Pedir la
+        // sesión con `disableCookieCache` la relee de MongoDB y reescribe la
+        // cookie.
+        await authClient.getSession({ query: { disableCookieCache: true } });
+      }
+
+      const response = await fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scheduledDays: days,
+          dailyGoalMinutes: goal,
+          currentBookTitle: book,
+          timezone: browserTimezone,
+        }),
+      });
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(body?.error ?? 'No pudimos guardar tus ajustes.');
         return;
       }
 
-      // La sesión va cacheada en la cookie durante 5 minutos, así que
-      // `updateUser` por sí solo NO refresca lo que ve el servidor: sin esta
-      // llamada, recargar seguiría mostrando el nombre anterior. Pedir la sesión
-      // con `disableCookieCache` la relee de MongoDB y reescribe la cookie.
-      await authClient.getSession({ query: { disableCookieCache: true } });
+      // Guardado. El usuario se queda en /ajustes: editar no debería expulsarle
+      // de la pantalla que estaba usando.
+      setSaved({ name: nameCheck.name, days, goal, book });
+      setName(nameCheck.name);
+      setJustSaved(true);
+
+      if (onboarding) {
+        // Única excepción: al terminar el onboarding el usuario no tiene todavía
+        // ningún camino a la app, así que se le lleva. `replace` evita que
+        // "atrás" devuelva al formulario ya enviado.
+        window.location.replace(HOME_PATH);
+        return;
+      }
+
+      if (nameChanged) {
+        // El saludo y el pie los rinde el servidor. Se vuelve a pedir la misma
+        // ruta para que se actualicen, sin sacar al usuario de /ajustes.
+        const { navigate } = await import('astro:transitions/client');
+        void navigate(window.location.pathname);
+      }
+    } catch {
+      setError('No pudimos contactar con el servidor. Inténtalo de nuevo.');
+    } finally {
+      // Pase lo que pase, el botón vuelve a su estado original.
+      setIsSaving(false);
     }
-
-    const response = await fetch('/api/profile', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        scheduledDays: days,
-        dailyGoalMinutes: goal,
-        currentBookTitle: book,
-        timezone: browserTimezone,
-      }),
-    });
-
-    if (!response.ok) {
-      const body = (await response.json().catch(() => null)) as { error?: string } | null;
-      setError(body?.error ?? 'No pudimos guardar tus ajustes.');
-      setStatus('idle');
-      return;
-    }
-
-    setStatus('saved');
-
-    // Navegación completa (no history.pushState) para que el servidor vuelva a
-    // renderizar con el perfil y el nombre nuevos. Sustituye la entrada en el
-    // historial: pulsar "atrás" desde el inicio no debe devolver al formulario
-    // que el usuario ya envió.
-    window.location.replace(HOME_PATH);
   }
 
   return (
@@ -177,7 +209,7 @@ export default function ScheduleEditor({
           value={name}
           onChange={(e) => {
             setName(e.target.value);
-            setStatus('idle');
+            setJustSaved(false);
           }}
           aria-invalid={(error !== null && /nombre/i.test(error)) || undefined}
           aria-describedby={
@@ -242,7 +274,7 @@ export default function ScheduleEditor({
           value={goal}
           onChange={(e) => {
             setGoal(Number(e.target.value));
-            setStatus('idle');
+            setJustSaved(false);
           }}
           className={inputClass}
         >
@@ -266,7 +298,7 @@ export default function ScheduleEditor({
           value={book}
           onChange={(e) => {
             setBook(e.target.value);
-            setStatus('idle');
+            setJustSaved(false);
           }}
           placeholder="Influencia: La Psicología de la Persuasión"
           className={inputClass}
@@ -296,19 +328,19 @@ export default function ScheduleEditor({
         </p>
       )}
 
-      <div className="flex items-center gap-3">
-        <Button type="submit" disabled={status !== 'idle'}>
-          {status === 'saving'
-            ? 'Guardando…'
-            : status === 'saved'
-              ? 'Guardado ✓'
-              : onboarding
-                ? 'Empezar a leer'
-                : 'Guardar cambios'}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" disabled={isSaving}>
+          {isSaving
+            ? 'Guardando cambios...'
+            : onboarding
+              ? 'Empezar a leer'
+              : 'Guardar cambios'}
         </Button>
-        {status === 'saved' && (
-          <p role="status" className="text-sm text-text-soft">
-            Volviendo al inicio…
+
+        {/* Un solo mensaje a la vez, en orden de relevancia. */}
+        {justSaved && !dirty && (
+          <p role="status" className="text-sm font-medium text-primary">
+            Guardado ✓
           </p>
         )}
         {dirty && (
