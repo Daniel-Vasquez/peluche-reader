@@ -1,0 +1,57 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+
+// Landing pública: no depende de sesión ni de base de datos.
+export const prerender = true;
+
+const appName = import.meta.env.PUBLIC_APP_NAME ?? 'Peluche Reader';
+---
+
+<BaseLayout title={appName}>
+  <main class="mx-auto flex min-h-dvh w-full max-w-3xl flex-col justify-center px-6 py-16">
+    <p class="mb-3 text-sm font-medium tracking-wide text-primary uppercase">
+      {appName}
+    </p>
+
+    <h1 class="text-4xl leading-tight font-semibold text-balance sm:text-5xl">
+      Lee todos los días.
+      <span class="text-primary">Salva a los perritos.</span>
+    </h1>
+
+    <p class="mt-5 max-w-xl text-lg text-pretty text-text-soft">
+      Elige qué días te comprometes a leer, cronometra tus sesiones y mira crecer
+      tu refugio. Cada día que fallas, un perrito se va; cada diez minutos que
+      lees, vuelve a casa.
+    </p>
+
+    <div class="mt-9 flex flex-wrap gap-3">
+      <a
+        href="/registro"
+        class="rounded-card bg-primary px-5 py-2.5 font-medium text-white transition hover:bg-primary-700"
+      >
+        Crear cuenta
+      </a>
+      <a
+        href="/login"
+        class="rounded-card border border-border bg-surface px-5 py-2.5 font-medium text-text transition hover:border-primary hover:text-primary"
+      >
+        Ya tengo cuenta
+      </a>
+    </div>
+
+    <dl class="mt-16 grid gap-4 sm:grid-cols-3">
+      <div class="rounded-card border border-border bg-surface p-5">
+        <dt class="text-sm text-text-soft">Umbral mínimo</dt>
+        <dd class="mt-1 text-2xl font-semibold text-primary">10 min</dd>
+      </div>
+      <div class="rounded-card border border-border bg-surface p-5">
+        <dt class="text-sm text-text-soft">Refugio inicial</dt>
+        <dd class="mt-1 text-2xl font-semibold text-accent">7 perritos</dd>
+      </div>
+      <div class="rounded-card border border-border bg-surface p-5">
+        <dt class="text-sm text-text-soft">Día programado sin leer</dt>
+        <dd class="mt-1 text-2xl font-semibold text-alert">−1 perrito</dd>
+      </div>
+    </dl>
+  </main>
+</BaseLayout>

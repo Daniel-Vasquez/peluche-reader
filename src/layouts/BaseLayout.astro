@@ -1,0 +1,49 @@
+---
+import '@/styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const {
+  title,
+  description = 'Crea el hábito de la lectura salvando perritos, un día a la vez.',
+} = Astro.props;
+
+const appName = import.meta.env.PUBLIC_APP_NAME ?? 'Peluche Reader';
+const fullTitle = title === appName ? title : `${title} · ${appName}`;
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+
+    {/*
+      Aplica el tema ANTES del primer pintado. Debe ser `is:inline` y estar en el
+      <head>: si se difiere, el usuario ve un flash blanco al cargar en oscuro.
+    */}
+    <script is:inline>
+      (() => {
+        const stored = localStorage.getItem('theme');
+        const dark =
+          stored === 'dark' ||
+          (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.classList.toggle('dark', dark);
+      })();
+    </script>
+  </head>
+  <body class="min-h-dvh bg-base text-text antialiased">
+    <slot />
+  </body>
+</html>
