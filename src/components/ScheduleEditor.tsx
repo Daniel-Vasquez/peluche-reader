@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { clsx } from 'clsx';
 import Button from '@/components/ui/Button';
 import { authClient } from '@/lib/auth-client';
@@ -18,9 +18,10 @@ interface Props {
   onboarding: boolean;
 }
 
+/* Sin `focus:outline-none`: anulaba el anillo global de `:focus-visible`. */
 const inputClass =
   'w-full rounded-card border border-border bg-surface px-3.5 py-2.5 text-text ' +
-  'placeholder:text-text-soft transition focus:border-primary focus:outline-none';
+  'placeholder:text-text-soft transition focus:border-primary';
 
 type Status = 'idle' | 'saving' | 'saved';
 
@@ -52,6 +53,39 @@ export default function ScheduleEditor({
     [initialTimezone],
   );
   const timezoneChanged = browserTimezone !== initialTimezone;
+
+  /** Punto 4: el error toma el foco al aparecer. */
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (error) errorRef.current?.focus();
+  }, [error]);
+
+  /**
+   * Punto 8: ¿hay trabajo sin guardar?
+   *
+   * Se compara con los valores que rindió el servidor. El libro se normaliza a
+   * cadena vacía porque el perfil lo guarda como `null`, y los días se comparan
+   * por contenido, no por identidad del array.
+   */
+  const dirty =
+    status === 'idle' &&
+    (name.trim() !== initialName.trim() ||
+      goal !== initialDailyGoalMinutes ||
+      book.trim() !== (initialBookTitle ?? '').trim() ||
+      days.length !== initialScheduledDays.length ||
+      days.some((d, i) => d !== initialScheduledDays[i]));
+
+  /*
+   * Aviso del navegador al cerrar o recargar con cambios pendientes. No cubre la
+   * navegación interna por enlaces —eso lo dice el indicador junto al botón—,
+   * pero sí el caso más costoso: perder el trabajo al cerrar la pestaña.
+   */
+  useEffect(() => {
+    if (!dirty) return;
+    const avisar = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener('beforeunload', avisar);
+    return () => window.removeEventListener('beforeunload', avisar);
+  }, [dirty]);
 
   function toggleDay(day: IsoWeekday) {
     setStatus('idle');
@@ -130,7 +164,7 @@ export default function ScheduleEditor({
         <label htmlFor="name" className="block text-sm font-medium">
           Tu nombre
         </label>
-        <p className="mt-1 mb-2 text-sm text-text-soft">
+        <p id="name-hint" className="mt-1 mb-2 text-sm text-text-soft">
           Con esto te saludamos y así se llama tu refugio.
         </p>
         <input
@@ -145,6 +179,12 @@ export default function ScheduleEditor({
             setName(e.target.value);
             setStatus('idle');
           }}
+          aria-invalid={(error !== null && /nombre/i.test(error)) || undefined}
+          aria-describedby={
+            [error && /nombre/i.test(error) ? 'ajustes-error' : null, 'name-hint']
+              .filter(Boolean)
+              .join(' ')
+          }
           className={inputClass}
         />
       </fieldset>
@@ -156,7 +196,10 @@ export default function ScheduleEditor({
           no penalizan.
         </p>
 
-        <div className="flex flex-wrap gap-2">
+        <div
+          className="flex flex-wrap gap-2"
+          aria-describedby={error && /día/i.test(error) ? 'ajustes-error' : undefined}
+        >
           {ISO_DAYS.map((day) => {
             const selected = days.includes(day);
             return (
@@ -243,6 +286,9 @@ export default function ScheduleEditor({
 
       {error && (
         <p
+          id="ajustes-error"
+          ref={errorRef}
+          tabIndex={-1}
           role="alert"
           className="rounded-card border border-alert/40 bg-alert/10 px-3.5 py-2.5 text-sm text-alert-text"
         >
@@ -263,6 +309,11 @@ export default function ScheduleEditor({
         {status === 'saved' && (
           <p role="status" className="text-sm text-text-soft">
             Volviendo al inicio…
+          </p>
+        )}
+        {dirty && (
+          <p role="status" className="text-sm text-text-soft">
+            Tienes cambios sin guardar.
           </p>
         )}
       </div>

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { signIn, signUp } from '@/lib/auth-client';
 import Button from '@/components/ui/Button';
 import { checkName, NAME_MAX_LENGTH, NAME_MIN_LENGTH } from '@/lib/name';
@@ -46,9 +46,14 @@ const COPY = {
   },
 } as const;
 
+/*
+ * Sin `focus:outline-none`: esa clase gana en especificidad a la regla global
+ * `:focus-visible` de global.css y dejaba los campos sin ningún indicador de
+ * foco. El borde teal es un extra, no el sustituto del anillo.
+ */
 const inputClass =
   'w-full rounded-card border border-border bg-surface px-3.5 py-2.5 text-text ' +
-  'placeholder:text-text-soft transition focus:border-primary focus:outline-none';
+  'placeholder:text-text-soft transition focus:border-primary';
 
 export default function AuthForm({ mode, next }: Props) {
   const [name, setName] = useState('');
@@ -58,6 +63,23 @@ export default function AuthForm({ mode, next }: Props) {
   const [pending, setPending] = useState(false);
 
   const copy = COPY[mode];
+
+  /**
+   * El mensaje de error recibe el foco al aparecer. Sin esto el foco se quedaba
+   * en `<body>` tras un envío fallido y había que recorrer la página entera con
+   * el teclado para volver al campo y corregir.
+   */
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (error) errorRef.current?.focus();
+  }, [error]);
+
+  /** Campo al que apunta el error, para marcarlo con `aria-invalid`. */
+  const invalidField: 'name' | 'credentials' | null = !error
+    ? null
+    : /nombre/i.test(error)
+      ? 'name'
+      : 'credentials';
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -116,9 +138,13 @@ export default function AuthForm({ mode, next }: Props) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Tu nombre"
+            aria-invalid={invalidField === 'name' || undefined}
+            aria-describedby={
+              invalidField === 'name' ? 'auth-error name-hint' : 'name-hint'
+            }
             className={inputClass}
           />
-          <p className="mt-1.5 text-sm text-text-soft">
+          <p id="name-hint" className="mt-1.5 text-sm text-text-soft">
             Así te llamaremos en la app y en tu refugio.
           </p>
         </div>
@@ -137,6 +163,8 @@ export default function AuthForm({ mode, next }: Props) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="tu@correo.com"
+          aria-invalid={invalidField === 'credentials' || undefined}
+          aria-describedby={invalidField === 'credentials' ? 'auth-error' : undefined}
           className={inputClass}
         />
       </div>
@@ -155,17 +183,31 @@ export default function AuthForm({ mode, next }: Props) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Mínimo 8 caracteres"
+          aria-invalid={invalidField === 'credentials' || undefined}
+          aria-describedby={
+            [
+              invalidField === 'credentials' ? 'auth-error' : null,
+              mode === 'register' ? 'password-hint' : null,
+            ]
+              .filter(Boolean)
+              .join(' ') || undefined
+          }
           className={inputClass}
         />
         {mode === 'register' && (
-          <p className="mt-1.5 text-sm text-text-soft">
+          <p id="password-hint" className="mt-1.5 text-sm text-text-soft">
             No hay verificación por correo ni recuperación: guarda bien tu contraseña.
           </p>
         )}
       </div>
 
       {error && (
+        // `tabIndex={-1}` lo hace enfocable por programa sin meterlo en el orden
+        // de tabulación.
         <p
+          id="auth-error"
+          ref={errorRef}
+          tabIndex={-1}
           role="alert"
           className="rounded-card border border-alert/40 bg-alert/10 px-3.5 py-2.5 text-sm text-alert-text"
         >

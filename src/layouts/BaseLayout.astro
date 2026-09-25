@@ -1,4 +1,5 @@
 ---
+import { ClientRouter } from 'astro:transitions';
 import '@/styles/global.css';
 
 interface Props {
@@ -30,16 +31,31 @@ const fullTitle = title === appName ? title : `${title} · ${appName}`;
     <meta property="og:type" content="website" />
 
     {/*
+      Transiciones entre páginas: sin esto, cada clic de navegación recarga el
+      documento entero, pierde el scroll y hace parpadear la cabecera `sticky`.
+      Respeta `prefers-reduced-motion` por su cuenta.
+    */}
+    <ClientRouter />
+
+    {/*
       Aplica el tema ANTES del primer pintado. Debe ser `is:inline` y estar en el
       <head>: si se difiere, el usuario ve un flash blanco al cargar en oscuro.
+
+      El listener de `astro:after-swap` NO es opcional con ClientRouter: al
+      navegar, Astro copia los atributos del `<html>` del documento nuevo —que el
+      servidor rinde sin la clase `dark`— y el tema se perdería en cada salto.
     */}
     <script is:inline>
       (() => {
-        const stored = localStorage.getItem('theme');
-        const dark =
-          stored === 'dark' ||
-          (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches);
-        document.documentElement.classList.toggle('dark', dark);
+        const aplicarTema = () => {
+          const stored = localStorage.getItem('theme');
+          const dark =
+            stored === 'dark' ||
+            (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.classList.toggle('dark', dark);
+        };
+        aplicarTema();
+        document.addEventListener('astro:after-swap', aplicarTema);
       })();
     </script>
   </head>
