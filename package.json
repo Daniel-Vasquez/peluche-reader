@@ -24,6 +24,8 @@
     "@types/react-dom": "^19.3.0",
     "astro": "^7.3.5",
     "better-auth": "^1.7.6",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.48.0",
     "mongodb": "^7.6.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

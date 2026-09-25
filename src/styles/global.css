@@ -5,26 +5,48 @@
 
 /* -----------------------------------------------------------------------------
    Tokens de diseño (tema claro)
-   Paleta base neutra (#fafafa / #eaedf2) para que nada compita con el texto.
-   Uso de color:
-     primary -> acción         (botones, foco, progreso)
-     accent  -> información    (datos, enlaces, series de gráficas)
-     alert   -> pérdida/riesgo (perritos perdidos) — máximo 1 elemento por pantalla
+
+   Base neutra (#fafafa / #eaedf2) para que nada compita con el texto.
+
+   Cada color de marca tiene DOS tokens porque un mismo tono no puede cumplir
+   AA en texto pequeño y seguir siendo el color de identidad en gráficos:
+
+     --color-primary        relleno de botones y TEXTO pequeño (AA 4.5:1)
+     --color-primary-hover  relleno en hover (más oscuro en claro, más claro en oscuro)
+     --color-primary-bright #0d9488, el teal de marca: cifras grandes y gráficos
+     --color-on-primary     etiqueta sobre el relleno primary
+     --color-accent         #0284c7 para cifras grandes y series de gráficas
+     --color-accent-text    misma familia, contraste AA para texto pequeño
+     --color-alert          #e9437c para cifras grandes y marcas de pérdida
+     --color-alert-text     misma familia, contraste AA para mensajes de error
+
+   Regla: `alert` solo para pérdida o riesgo, un elemento por pantalla como
+   máximo. `accent` para información. `primary` para acción.
+
+   Todos los pares están verificados a WCAG AA en los dos temas: texto pequeño
+   ≥ 4.5:1, cifras grandes (≥ 24 px) ≥ 3:1.
 ----------------------------------------------------------------------------- */
 @theme {
-  --color-base:        #fafafa;
-  --color-surface:     #ffffff;
-  --color-muted:       #eaedf2;
-  --color-border:      #dfe3ea;
-  --color-text:        #16202e;
-  --color-text-soft:   #5b6675;
+  --color-base:           #fafafa;
+  --color-surface:        #ffffff;
+  --color-muted:          #eaedf2;
+  --color-border:         #dfe3ea;
+  --color-text:           #16202e;
+  --color-text-soft:      #5b6675;
 
-  --color-primary:     #0d9488;
-  --color-primary-700: #0f766e;
-  --color-primary-50:  #edfbf8;
+  --color-primary:        #0f766e;
+  /* El hover OSCURECE en claro y ACLARA en oscuro: así la etiqueta mantiene
+     contraste AA en los dos estados, no solo en reposo. */
+  --color-primary-hover:  #0b6b62;
+  --color-primary-bright: #0d9488;
+  --color-primary-soft:   #edfbf8;
+  --color-on-primary:     #ffffff;
 
-  --color-accent:      #0284c7;
-  --color-alert:       #e9437c;
+  --color-accent:         #0284c7;
+  --color-accent-text:    #0369a1;
+
+  --color-alert:          #e9437c;
+  --color-alert-text:     #c02258;
 
   --radius-card: 14px;
 
@@ -32,21 +54,28 @@
                Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
-/* Tema oscuro: mismos nombres, otros valores. Ningún componente conoce dos paletas. */
+/* Tema oscuro: mismos nombres, otros valores. Ningún componente conoce dos
+   paletas ni necesita variantes `dark:`. */
 .dark {
-  --color-base:        #0b1120;
-  --color-surface:     #131a2a;
-  --color-muted:       #1b2436;
-  --color-border:      #26314a;
-  --color-text:        #e6ebf3;
-  --color-text-soft:   #96a2b5;
+  --color-base:           #0b1120;
+  --color-surface:        #131a2a;
+  --color-muted:          #1b2436;
+  --color-border:         #26314a;
+  --color-text:           #e6ebf3;
+  --color-text-soft:      #96a2b5;
 
-  --color-primary:     #14b8a6;
-  --color-primary-700: #2dd4bf;
-  --color-primary-50:  #0f2b2a;
+  --color-primary:        #14b8a6;
+  --color-primary-hover:  #2dd4bf;
+  --color-primary-bright: #2dd4bf;
+  --color-primary-soft:   #0f2b2a;
+  /* Sobre un teal claro, la etiqueta va oscura: blanco daría 2.49:1. */
+  --color-on-primary:     #0b1120;
 
-  --color-accent:      #38bdf8;
-  --color-alert:       #f472a3;
+  --color-accent:         #38bdf8;
+  --color-accent-text:    #7dd3fc;
+
+  --color-alert:          #f472a3;
+  --color-alert-text:     #fda4c4;
 }
 
 /* Le dice al navegador cómo pintar scrollbars y controles nativos. */

@@ -1,0 +1,30 @@
+---
+type Tone = 'neutral' | 'primary' | 'accent' | 'alert';
+
+interface Props {
+  label: string;
+  value: string | number;
+  /** Texto secundario bajo el valor. */
+  hint?: string;
+  tone?: Tone;
+}
+
+const { label, value, hint, tone = 'neutral' } = Astro.props;
+
+// El tono comunica significado, no decora: primary = logro, accent = dato,
+// alert = pérdida. Ver la convención de color en global.css.
+// Las cifras son de 24 px (texto grande): aquí sí valen los colores de marca,
+// que cumplen el umbral de 3:1. Para texto pequeño hay que usar `-text`.
+const TONES: Record<Tone, string> = {
+  neutral: 'text-text',
+  primary: 'text-primary-bright',
+  accent: 'text-accent',
+  alert: 'text-alert',
+};
+---
+
+<div class="rounded-card border border-border bg-surface p-5">
+  <dt class="text-sm text-text-soft">{label}</dt>
+  <dd class:list={['mt-1 text-2xl font-semibold tabular-nums', TONES[tone]]}>{value}</dd>
+  {hint && <p class="mt-1 text-sm text-text-soft">{hint}</p>}
+</div>

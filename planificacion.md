@@ -252,53 +252,86 @@ export default defineConfig({
 > de perritos). Regla de uso: `#e9437c` **solo** para penalizaciones y estados
 > críticos; nunca para navegación ni botones primarios.
 
+**Cada color de marca necesita DOS tokens.** Un mismo tono no puede cumplir AA en
+texto pequeño y seguir siendo el color de identidad en gráficos: `#0d9488` sobre
+blanco da 3.74:1, por debajo del 4.5:1 que exige el texto normal. Y en tema
+oscuro el relleno es un teal claro, donde una etiqueta blanca da 2.49:1.
+
+| Token | Para qué | Claro | Oscuro |
+|---|---|---|---|
+| `--color-primary` | relleno de botones y **texto pequeño** | `#0f766e` | `#14b8a6` |
+| `--color-primary-hover` | relleno en hover | `#0b6b62` | `#2dd4bf` |
+| `--color-primary-bright` | teal de marca: **cifras grandes** y gráficos | `#0d9488` | `#2dd4bf` |
+| `--color-primary-soft` | tinte de chip / fondo suave | `#edfbf8` | `#0f2b2a` |
+| `--color-on-primary` | etiqueta sobre el relleno primary | `#ffffff` | `#0b1120` |
+| `--color-accent` | cifras grandes y series de gráficas | `#0284c7` | `#38bdf8` |
+| `--color-accent-text` | enlaces y **texto pequeño** | `#0369a1` | `#7dd3fc` |
+| `--color-alert` | cifras grandes y marcas de pérdida | `#e9437c` | `#f472a3` |
+| `--color-alert-text` | mensajes de error, **texto pequeño** | `#c02258` | `#fda4c4` |
+
+> **El hover oscurece en claro y aclara en oscuro.** Si el hover aclarase en los
+> dos, en tema claro la etiqueta blanca caería a 3.74:1: WCAG aplica a todos los
+> estados, no solo al de reposo.
+
+Contraste verificado (texto pequeño ≥ 4.5:1, cifras ≥ 24 px ≥ 3:1):
+
+```
+                            CLARO    OSCURO
+texto normal sobre tarjeta  16.40    14.51
+texto suave sobre tarjeta    5.83     6.73
+primary texto sobre tarjeta  5.47     6.98
+etiqueta en botón primary    5.47     7.56
+etiqueta en botón (hover)    6.38    10.12
+accent-text sobre tarjeta    5.93    10.42
+alert-text sobre tarjeta     5.82     9.33
+cifra primary-bright         3.74     9.33
+cifra accent                 4.10     8.11
+cifra alert                  3.78     6.44
+```
+
 ```css
 @import "tailwindcss";
 
-/* dark mode por clase en <html>, no por media query */
+/* Dark mode por clase en <html>, no por media query: el usuario manda sobre el SO. */
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-base:        #fafafa;
-  --color-surface:     #ffffff;
-  --color-muted:       #eaedf2;
-  --color-border:      #dfe3ea;
-  --color-text:        #16202e;
-  --color-text-soft:   #5b6675;
+  --color-base: #fafafa;  --color-surface: #ffffff;
+  --color-muted: #eaedf2; --color-border: #dfe3ea;
+  --color-text: #16202e;  --color-text-soft: #5b6675;
 
-  --color-primary:     #0d9488;
-  --color-primary-700: #0f766e;
-  --color-primary-50:  #edfbf8;
+  --color-primary: #0f766e;        --color-primary-hover: #0b6b62;
+  --color-primary-bright: #0d9488; --color-primary-soft: #edfbf8;
+  --color-on-primary: #ffffff;
 
-  --color-accent:      #0284c7;  /* datos, enlaces, gráficas */
-  --color-alert:       #e9437c;  /* pérdida de perritos */
+  --color-accent: #0284c7;  --color-accent-text: #0369a1;
+  --color-alert: #e9437c;   --color-alert-text: #c02258;
 
   --radius-card: 14px;
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 
-/* Overrides de tema oscuro: mismo contrato de nombres */
+/* Tema oscuro: mismos nombres, otros valores. */
 .dark {
-  --color-base:        #0b1120;
-  --color-surface:     #131a2a;
-  --color-muted:       #1b2436;
-  --color-border:      #26314a;
-  --color-text:        #e6ebf3;
-  --color-text-soft:   #96a2b5;
+  --color-base: #0b1120;  --color-surface: #131a2a;
+  --color-muted: #1b2436; --color-border: #26314a;
+  --color-text: #e6ebf3;  --color-text-soft: #96a2b5;
 
-  --color-primary:     #14b8a6;
-  --color-primary-700: #2dd4bf;
-  --color-primary-50:  #0f2b2a;
+  --color-primary: #14b8a6;        --color-primary-hover: #2dd4bf;
+  --color-primary-bright: #2dd4bf; --color-primary-soft: #0f2b2a;
+  --color-on-primary: #0b1120;     /* blanco daría 2.49:1 */
 
-  --color-accent:      #38bdf8;
-  --color-alert:       #f472a3;
+  --color-accent: #38bdf8;  --color-accent-text: #7dd3fc;
+  --color-alert: #f472a3;   --color-alert-text: #fda4c4;
 }
 
-html, body { background: var(--color-base); color: var(--color-text); }
-/* evita el flash de tema al hidratar */
-html { color-scheme: light; }
-html.dark { color-scheme: dark; }
+:root      { color-scheme: light; }
+:root.dark { color-scheme: dark; }
 ```
+
+`@layer base` fija además `body { background-color; color }`, el
+`:focus-visible` con anillo `--color-primary`, y un bloque
+`@media (prefers-reduced-motion: reduce)` que anula animaciones y transiciones.
 
 **`src/layouts/BaseLayout.astro`** — `<html lang="es">`, importa `global.css`,
 y un script **inline y bloqueante** en `<head>` para aplicar el tema antes del
@@ -839,49 +872,87 @@ Todo lo visual posterior se construye sobre estas piezas.
 npm install clsx lucide-react
 ```
 
+> Versiones instaladas (verificadas): `clsx@2.1.1`, `lucide-react@1.48.0`.
+
 ### Archivos
 
 **`src/components/ThemeToggle.tsx`** (React, `client:load`)
+
+El estado inicial ya lo fija el script `is:inline` de la Tanda 0; el `useEffect`
+solo **lee** lo aplicado. Escribir la clase durante el render provocaría el
+parpadeo que ese script evita.
+
+Además escucha `prefers-color-scheme` en vivo, pero **solo mientras no haya
+elección guardada**: en cuanto el usuario pulsa, su decisión manda para siempre.
+
 ```tsx
-import { useEffect, useState } from 'react';
-import { Moon, Sun } from 'lucide-react';
+useEffect(() => {
+  setIsDark(document.documentElement.classList.contains('dark'));
 
-export default function ThemeToggle() {
-  const [dark, setDark] = useState(false);
-  useEffect(() => setDark(document.documentElement.classList.contains('dark')), []);
-  const toggle = () => {
-    const next = !dark;
-    document.documentElement.classList.toggle('dark', next);
-    localStorage.setItem('theme', next ? 'dark' : 'light');
-    setDark(next);
+  const media = window.matchMedia('(prefers-color-scheme: dark)');
+  const onSystemChange = (event: MediaQueryListEvent) => {
+    if (localStorage.getItem(STORAGE_KEY)) return; // elección explícita: no tocar
+    document.documentElement.classList.toggle('dark', event.matches);
+    setIsDark(event.matches);
   };
-  return (
-    <button onClick={toggle} aria-label="Cambiar tema"
-      className="rounded-full border border-border bg-surface p-2 text-text-soft hover:text-primary transition">
-      {dark ? <Sun size={18} /> : <Moon size={18} />}
-    </button>
-  );
-}
+  media.addEventListener('change', onSystemChange);
+  return () => media.removeEventListener('change', onSystemChange);
+}, []);
 ```
-> El estado inicial ya lo fija el script inline de la Tanda 0; el `useEffect`
-> solo **lee** lo aplicado. No escribas la clase en el render: causaría flash.
 
-**`src/layouts/AppLayout.astro`** — recibe `title`, exige `Astro.locals.user`
-(el middleware ya lo garantiza) y pinta:
-- Header: logo, nav (`/app` "Hoy", `/progreso` "Progreso", `/ajustes` "Ajustes"),
-  `<ThemeToggle client:load />`, menú de usuario con cerrar sesión.
-- `<main class="mx-auto w-full max-w-3xl px-4 py-8">` + `<slot />`.
+Accesibilidad: `aria-pressed={isDark}` y un `aria-label` que describe la acción
+("Cambiar a tema claro"), no el estado.
 
-**`src/components/ui/`** — primitivas sin dependencias externas:
-`Button.tsx` (variantes `primary` teal / `ghost` / `danger` rosa),
-`Card.tsx` (`bg-surface border border-border rounded-card`),
-`Stat.tsx`, `Toggle.tsx`.
+**`src/layouts/AppLayout.astro`** — props `title`, `heading?`, `subheading?`.
+Exige `Astro.locals.user` (el middleware ya lo garantiza) y pinta:
+
+- Header con logo, nav (`/app` "Hoy", `/progreso` "Progreso", `/ajustes`
+  "Ajustes"), `<ThemeToggle client:load />` y `<SignOutButton client:load />`.
+- La página activa se marca con **`aria-current="page"`** además del color: el
+  estado no puede comunicarse solo por color.
+- `<main class="mx-auto w-full max-w-3xl grow px-6 py-10">` con el `<h1>` y el
+  `<slot />`.
+- El título del documento se compone como `` `${title} · ${firstName(user.name)}` ``.
+
+**Crea también los marcadores de `/progreso` y `/ajustes`**: la navegación apunta
+a ellos y sin las páginas daría 404. Cada uno con `AppLayout` + una `Card` que
+diga en qué tanda llega su contenido.
+
+`src/lib/game/preview.ts` mantiene las tres cifras que la interfaz ya menciona
+(7 perritos, 10 min, −1) para no incrustar números sueltos en el marcado. **Se
+borra en la Tanda 6**, cuando `game/config.ts` pase a ser la fuente de verdad.
+
+**Primitivas** — React solo donde hay interacción; lo demás, componentes Astro
+(cero JavaScript en el cliente):
+
+| Archivo | Tipo | Notas |
+|---|---|---|
+| `components/ui/Button.tsx` | React | variantes `primary` / `ghost` / `danger`, tamaños `sm` / `md` |
+| `components/ui/Card.astro` | Astro | `rounded-card border border-border bg-surface` |
+| `components/ui/Stat.astro` | Astro | cifra de 24 px con tono `neutral` / `primary` / `accent` / `alert` |
+
+`Button` usa `text-on-primary` (nunca `text-white`) y `hover:bg-primary-hover`.
+`Stat` usa `text-primary-bright` para el tono `primary`: su cifra es texto grande,
+donde el teal de marca sí cumple el umbral de 3:1.
+
+Refactoriza `AuthForm` y `SignOutButton` para que usen `Button` en vez de clases
+sueltas: es el momento de unificar, antes de que existan más formularios.
+
+> **Sobre los modificadores de opacidad** (`bg-alert/10`): Tailwind v4 emite dos
+> reglas, un hex de respaldo y una `color-mix(… var(--color-alert) …)` dentro de
+> un `@supports`. La segunda gana en cualquier navegador actual, así que **sí
+> siguen el tema**. Solo un navegador sin `color-mix` se quedaría con el tinte
+> del tema claro; es una degradación aceptable.
 
 ### Reglas de diseño (aplican a todas las tandas siguientes)
 - Fondo de página `bg-base`; tarjetas `bg-surface`; separadores `border-border`.
-- `#0d9488` (primary) = acción. `#0284c7` (accent) = información y series de
-  datos. `#e9437c` (alert) = pérdida/riesgo. Máximo **un** elemento en rosa por
+- **Significado del color**: `primary` = acción, `accent` = información y series
+  de datos, `alert` = pérdida o riesgo. Máximo **un** elemento en rosa por
   pantalla.
+- **Texto pequeño → tokens `-text`** (`text-alert-text`, `text-accent-text`).
+  **Cifras grandes y gráficos → tokens de marca** (`text-primary-bright`,
+  `text-accent`, `text-alert`). Confundirlos rompe AA.
+- Nunca `text-white` sobre un relleno de marca: usa `text-on-primary`.
 - Cero degradados llamativos, cero sombras fuertes: el contenido manda.
 - Tipografía de una sola familia, jerarquía por peso y tamaño.
 
@@ -889,7 +960,13 @@ export default function ThemeToggle() {
 Nada. Opcional: si quieres otra tipografía distinta a Inter, dímelo ahora.
 
 ### Criterio de aceptación
-El toggle cambia el tema, sobrevive a un F5 y no produce parpadeo al cargar.
+- El toggle cambia el tema, sobrevive a un F5 y no produce parpadeo al cargar.
+- `/app`, `/progreso` y `/ajustes` responden 200 y marcan su enlace de nav con
+  `aria-current="page"`.
+- Ninguna utilidad de color resuelve a un hex fijo en el CSS generado (salvo los
+  respaldos de `@supports`): todas deben referenciar `var(--color-…)`, o el tema
+  oscuro no las alcanzará.
+- Todos los pares de contraste cumplen AA en los dos temas.
 
 ---
 

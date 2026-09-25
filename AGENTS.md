@@ -58,6 +58,16 @@ defecto de Tailwind. Los tokens están en `src/styles/global.css`; el tema oscur
 redefine los mismos nombres bajo `.dark`, por lo que ningún componente necesita
 conocer dos paletas ni escribir variantes `dark:`.
 
-- `primary` (teal) → acción: botones, foco, progreso.
-- `accent` (azul) → información: enlaces, series de gráficas.
-- `alert` (rosa) → pérdida o riesgo. Máximo **un** elemento por pantalla.
+- `primary` → acción: botones, foco, progreso.
+- `accent` → información: enlaces, series de gráficas.
+- `alert` → pérdida o riesgo. Máximo **un** elemento por pantalla.
+
+Cada color de marca tiene **dos** tokens, y confundirlos rompe WCAG AA:
+
+- **Texto pequeño** → `text-primary`, `text-accent-text`, `text-alert-text`.
+- **Cifras grandes (≥ 24 px) y gráficos** → `text-primary-bright`,
+  `text-accent`, `text-alert`.
+- **Etiqueta sobre un relleno de marca** → `text-on-primary`, nunca `text-white`
+  (en tema oscuro el relleno es claro y el blanco daría 2.49:1).
+- **Hover de relleno** → `hover:bg-primary-hover`, que oscurece en tema claro y
+  aclara en oscuro.

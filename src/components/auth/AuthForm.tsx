@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { signIn, signUp } from '@/lib/auth-client';
+import Button from '@/components/ui/Button';
 import { checkName, NAME_MAX_LENGTH, NAME_MIN_LENGTH } from '@/lib/name';
 
 type Mode = 'login' | 'register';
@@ -47,7 +48,7 @@ const COPY = {
 
 const inputClass =
   'w-full rounded-card border border-border bg-surface px-3.5 py-2.5 text-text ' +
-  'placeholder:text-text-soft/70 transition focus:border-primary focus:outline-none';
+  'placeholder:text-text-soft transition focus:border-primary focus:outline-none';
 
 export default function AuthForm({ mode, next }: Props) {
   const [name, setName] = useState('');
@@ -166,19 +167,15 @@ export default function AuthForm({ mode, next }: Props) {
       {error && (
         <p
           role="alert"
-          className="rounded-card border border-alert/40 bg-alert/10 px-3.5 py-2.5 text-sm text-alert"
+          className="rounded-card border border-alert/40 bg-alert/10 px-3.5 py-2.5 text-sm text-alert-text"
         >
           {error}
         </p>
       )}
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="w-full rounded-card bg-primary px-5 py-2.5 font-medium text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
-      >
+      <Button type="submit" disabled={pending} className="w-full">
         {pending ? copy.submitting : copy.submit}
-      </button>
+      </Button>
 
       <p className="text-center text-sm text-text-soft">
         {copy.switchText}{' '}
