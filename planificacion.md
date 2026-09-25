@@ -981,56 +981,76 @@ Ninguna nueva (usa `zod` de la Tanda 1).
 
 ### Archivos
 
-**`src/lib/repos/profile.ts`**
+**`src/lib/repos/profile.ts`** — exporta `ensureProfile`, `updateProfile`,
+`PROFILE_DEFAULTS`, `GOAL_OPTIONS` y `defaultTimezone()`.
+
+`ensureProfile` usa `$setOnInsert` + `upsert` en **una sola** operación: dos
+peticiones simultáneas (dos pestañas abriendo `/app`) no pueden crear dos
+perfiles, porque el índice único en `userId` lo impide. **Verificado**: 10
+peticiones en paralelo a `GET /api/profile` dejan exactamente 1 documento.
+
 ```ts
-import { col } from '@/lib/db/collections';
-import type { ProfileDoc } from '@/lib/db/types';
-
-const DEFAULTS = {
-  timezone: import.meta.env.PUBLIC_DEFAULT_TIMEZONE ?? 'America/Bogota',
-  scheduledDays: [1, 2, 3, 4, 5],
+export const PROFILE_DEFAULTS = {
+  scheduledDays: [1, 2, 3, 4, 5] as IsoWeekday[],  // L–V, el compromiso típico
   dailyGoalMinutes: 10,
-};
+} as const;
 
-/** Crea el perfil si no existe. Idempotente. */
-export async function ensureProfile(userId: string, tz?: string): Promise<ProfileDoc> {
-  const c = await col.profiles();
-  const now = new Date();
-  await c.updateOne(
-    { userId },
-    {
-      $setOnInsert: {
-        userId,
-        timezone: tz ?? DEFAULTS.timezone,
-        scheduledDays: DEFAULTS.scheduledDays,
-        dailyGoalMinutes: DEFAULTS.dailyGoalMinutes,
-        currentBookTitle: null,
-        onboardedAt: null,
-        createdAt: now,
-        updatedAt: now,
-      },
-    },
-    { upsert: true },
-  );
-  return (await c.findOne({ userId }))!;
+/** Metas de la interfaz: coinciden con los escalones de recompensa. */
+export const GOAL_OPTIONS = [10, 15, 20, 25, 30] as const;
+
+/** La zona por defecto sale de PUBLIC_DEFAULT_TIMEZONE, validada. */
+export function defaultTimezone(): string {
+  const fromEnv = readEnvOr('PUBLIC_DEFAULT_TIMEZONE', 'America/Bogota');
+  return isValidTimezone(fromEnv) ? fromEnv : 'UTC';
 }
 ```
 
+**`updateProfile` es lo que cierra el onboarding**: si `onboardedAt` es `null`,
+lo pone en el primer guardado. Hasta entonces `/app` redirige a `/ajustes`,
+porque sin días comprometidos la gamificación no puede penalizar ni recompensar
+nada.
+
 **`src/pages/api/profile.ts`** — `GET` devuelve el perfil; `PATCH` lo actualiza.
-Validación Zod:
+Ambos responden `401 {"error":"No autenticado."}` sin sesión.
+
+**Todos los mensajes de Zod van en español, también los de límites.** Zod los
+emite en inglés por defecto (`"Too small: expected number to be >=1"`), así que
+hay que pasarlos explícitamente en cada `.min()` / `.max()` / `.int()`:
+
 ```ts
 const PatchSchema = z.object({
-  scheduledDays: z.array(z.number().int().min(1).max(7)).min(1).max(7)
-    .transform((d) => [...new Set(d)].sort()),
-  timezone: z.string().refine((tz) => {
-    try { new Intl.DateTimeFormat('en', { timeZone: tz }); return true; } catch { return false; }
-  }, 'Zona horaria inválida').optional(),
-  dailyGoalMinutes: z.number().int().min(5).max(180).optional(),
-  currentBookTitle: z.string().trim().max(160).nullable().optional(),
+  scheduledDays: z
+    .array(
+      z.number()
+        .int('Los días deben ser números enteros.')
+        .min(1, 'Día de la semana inválido: debe estar entre 1 (lunes) y 7 (domingo).')
+        .max(7, 'Día de la semana inválido: debe estar entre 1 (lunes) y 7 (domingo).'),
+    )
+    .min(1, 'Elige al menos un día de la semana.')
+    .max(7)
+    .transform((days) => [...new Set(days)].sort((a, b) => a - b) as IsoWeekday[])
+    .optional(),
+
+  timezone: z.string().refine(isValidTimezone, 'Zona horaria no reconocida.').optional(),
+
+  dailyGoalMinutes: z.number().int()
+    .refine((m) => GOAL_OPTIONS.includes(m),
+      `La meta debe ser una de: ${GOAL_OPTIONS.join(', ')} minutos.`)
+    .optional(),
+
+  currentBookTitle: z.string()
+    .max(160, 'El título no puede pasar de 160 caracteres.')
+    .transform((t) => t.trim())
+    .transform((t) => (t.length === 0 ? null : t))   // "" y "   " → null
+    .nullable().optional(),
 });
 ```
+
 > Exigir **al menos 1 día**: un usuario con `scheduledDays: []` nunca podría
 > perder ni ganar por compromiso y rompería la narrativa del juego.
+>
+> El `transform` deduplica y ordena, así que `[3,1,7,3,1]` se guarda como
+> `[1,3,7]`; el cliente no tiene que preocuparse por el orden.
 
 **`src/components/ScheduleEditor.tsx`** (React, `client:load`)
 - **Campo de nombre**, precargado con `user.name`. Es editable aquí porque el
@@ -1041,16 +1061,50 @@ const PatchSchema = z.object({
 - Input de libro actual (placeholder: `Influencia: La Psicología de la Persuasión`).
 - Select de meta diaria: 10 / 15 / 20 / 30 min.
 - Detecta la zona horaria con `Intl.DateTimeFormat().resolvedOptions().timeZone`
-  y la envía en el primer `PATCH`.
+  y **la envía en cada guardado**, no solo en el primero: si el usuario viaja o
+  cambia el reloj del sistema, la contabilidad de días debe seguirle. Si difiere
+  de la guardada, lo avisa antes de guardar.
 - Guarda con `fetch('/api/profile', { method: 'PATCH', ... })`, muestra estado
-  "Guardado ✓".
+  "Guardado ✓" y etiqueta el botón "Empezar a leer" durante el onboarding.
+- Accesibilidad de los chips: `aria-pressed` + `aria-label` con el día completo
+  ("miércoles"), porque la letra sola (`X`) no se entiende con lector de pantalla.
+
+#### ⚠️ La caché de sesión en cookie deja el nombre obsoleto
+
+`authClient.updateUser({ name })` escribe en MongoDB y responde `200`, pero la
+sesión va **cacheada en la cookie** durante 5 minutos (`session.cookieCache`,
+Tanda 2). El servidor sigue sirviendo el nombre anterior, así que recargar la
+página muestra el viejo: parece que el guardado no funcionó.
+
+Hay que forzar la relectura antes de recargar:
+
+```ts
+const nameChanged = nameCheck.name !== initialName;
+if (nameChanged) {
+  const { error } = await authClient.updateUser({ name: nameCheck.name });
+  if (error) { /* … */ return; }
+
+  // Relee de MongoDB y reescribe la cookie de caché.
+  await authClient.getSession({ query: { disableCookieCache: true } });
+}
+// …guardar el perfil…
+if (nameChanged) window.location.reload();
+```
+
+Comprobado: sin la llamada con `disableCookieCache`, `get-session` devuelve
+`'Ana Torres'` aunque en MongoDB ya diga `'Ana María Torres'`. Con ella, el
+cambio aparece en el saludo, el título y el layout de inmediato.
 
 **`src/pages/ajustes.astro`** — usa `AppLayout`, llama a `ensureProfile` en el
 frontmatter y pasa el perfil como prop al editor.
 
 **Enganche en `/app`**: si `profile.onboardedAt === null`, `/app` redirige a
-`/ajustes?onboarding=1` y el editor muestra copy de bienvenida. Al guardar por
-primera vez se setea `onboardedAt`.
+`/ajustes?onboarding=1` y el editor cambia su copy ("Prepara tu refugio",
+"Empezar a leer"). Al guardar por primera vez se setea `onboardedAt`.
+
+`/app` ya usa el perfil para orientar el día con `dayKey()` e `isoWeekday()` en
+la zona del usuario: muestra el compromiso semanal, la meta, el libro actual y si
+hoy es día de lectura o día libre.
 
 ### Documento de ejemplo
 ```json
@@ -1071,9 +1125,18 @@ Confirmar tu zona horaria real para `PUBLIC_DEFAULT_TIMEZONE` (asumo
 `America/Bogota`).
 
 ### Criterio de aceptación
-- Cambiar los días en `/ajustes`, recargar, y ver la selección persistida en Mongo.
-- Cambiar el nombre en `/ajustes` actualiza el saludo de `/app` y el título de la
-  página.
+- Usuario nuevo: `/app` → 302 a `/ajustes?onboarding=1`. Tras guardar, `/app` → 200.
+- `PATCH` con `[3,1,7,3,1]` persiste `[1,3,7]`; con `"   "` en el título persiste
+  `null`.
+- Todos los rechazos del endpoint devuelven 400 con mensaje **en español**:
+  sin días, día 0, día 8, día 1.5, meta 7 min, zona inventada, título de 200
+  caracteres, JSON roto.
+- `GET`/`PATCH` sin sesión → 401.
+- 10 `GET /api/profile` en paralelo dejan **un solo** documento en `profiles`.
+- Cambiar el nombre en `/ajustes` actualiza el saludo de `/app` y el título **en
+  la primera recarga**, no cinco minutos después.
+- Un POST directo a `/api/auth/update-user` con `name: "D"` devuelve 400 y **no**
+  corrompe el nombre guardado.
 
 ---
 

@@ -70,6 +70,18 @@ async function createAuth() {
             return { data: { ...user, name: result.name } };
           },
         },
+        update: {
+          // `/ajustes` permite renombrarse. El `before` de update recibe un
+          // `Partial<User>`: solo valida si el nombre viene en esta petición.
+          before: async (user) => {
+            if (user.name === undefined) return;
+            const result = checkName(String(user.name));
+            if (!result.ok) {
+              throw new APIError('BAD_REQUEST', { message: result.error });
+            }
+            return { data: { ...user, name: result.name } };
+          },
+        },
       },
     },
 

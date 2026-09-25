@@ -2,19 +2,38 @@
 import AppLayout from '@/layouts/AppLayout.astro';
 import Card from '@/components/ui/Card.astro';
 import Stat from '@/components/ui/Stat.astro';
+import { ensureProfile } from '@/lib/repos/profile';
 import { firstName } from '@/lib/name';
+import { WEEKDAY_LABELS, dayKey, isoWeekday } from '@/lib/time';
 import { GAME_PREVIEW } from '@/lib/game/preview';
 
 export const prerender = false;
 
 const user = Astro.locals.user!;
+const profile = await ensureProfile(user.id);
+
+// Sin días comprometidos la gamificación no puede penalizar ni recompensar,
+// así que el onboarding es obligatorio antes de ver el resto de la app.
+if (profile.onboardedAt === null) {
+  return Astro.redirect('/ajustes?onboarding=1', 302);
+}
+
 const greeting = firstName(user.name);
+const now = new Date();
+const today = dayKey(now, profile.timezone);
+const todayWeekday = isoWeekday(now, profile.timezone);
+const isScheduledToday = profile.scheduledDays.includes(todayWeekday);
+const scheduledLabels = profile.scheduledDays.map((d) => WEEKDAY_LABELS[d].short);
 ---
 
 <AppLayout
   title="Hoy"
   heading={`Hola, ${greeting}`}
-  subheading="Aquí vivirán tu cronómetro y tu refugio."
+  subheading={
+    isScheduledToday
+      ? 'Hoy te comprometiste a leer.'
+      : 'Hoy es día libre: no leer no te cuesta ningún perrito.'
+  }
 >
   <Card title={`El refugio de ${user.name}`}>
     <p class="text-text-soft">
@@ -24,22 +43,30 @@ const greeting = firstName(user.name);
 
   <dl class="mt-4 grid gap-4 sm:grid-cols-3">
     <Stat
-      label="Refugio inicial"
-      value={GAME_PREVIEW.startDogs}
-      hint="perritos a tu cuidado"
+      label="Tu compromiso"
+      value={scheduledLabels.join(' · ')}
+      hint={`${profile.scheduledDays.length} días a la semana`}
       tone="primary"
     />
     <Stat
-      label="Umbral de recompensa"
-      value={`${GAME_PREVIEW.baseMinutes} min`}
-      hint="para ganar el primer perrito"
+      label="Meta por sesión"
+      value={`${profile.dailyGoalMinutes} min`}
+      hint={`el umbral de recompensa son ${GAME_PREVIEW.baseMinutes} min`}
       tone="accent"
     />
     <Stat
-      label="Día programado sin leer"
-      value={`−${GAME_PREVIEW.penaltyPerMiss}`}
-      hint="nunca baja de 1"
-      tone="alert"
+      label="Hoy"
+      value={isScheduledToday ? 'Día de lectura' : 'Día libre'}
+      hint={today}
+      tone={isScheduledToday ? 'primary' : 'neutral'}
     />
   </dl>
+
+  {
+    profile.currentBookTitle && (
+      <p class="mt-4 text-sm text-text-soft">
+        Estás leyendo <span class="font-medium text-text">{profile.currentBookTitle}</span>.
+      </p>
+    )
+  }
 </AppLayout>

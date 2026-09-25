@@ -1,29 +1,41 @@
 ---
 import AppLayout from '@/layouts/AppLayout.astro';
 import Card from '@/components/ui/Card.astro';
+import ScheduleEditor from '@/components/ScheduleEditor';
+import { ensureProfile, GOAL_OPTIONS } from '@/lib/repos/profile';
 
 export const prerender = false;
 
 const user = Astro.locals.user!;
+const profile = await ensureProfile(user.id);
+
+// `/app` manda aquí con ?onboarding=1 mientras el perfil no se haya guardado nunca.
+const onboarding = profile.onboardedAt === null;
 ---
 
 <AppLayout
   title="Ajustes"
-  subheading="Tu nombre, los días que te comprometes a leer y tu libro actual."
+  heading={onboarding ? 'Prepara tu refugio' : 'Ajustes'}
+  subheading={
+    onboarding
+      ? 'Dos cosas y empiezas: cómo te llamas y qué días te comprometes a leer.'
+      : 'Tu nombre, los días que te comprometes a leer y tu libro actual.'
+  }
 >
-  <Card title="Cuenta">
-    <dl class="grid gap-3 sm:grid-cols-2">
-      <div>
-        <dt class="text-sm text-text-soft">Nombre</dt>
-        <dd class="mt-0.5 font-medium">{user.name}</dd>
-      </div>
-      <div>
-        <dt class="text-sm text-text-soft">Correo</dt>
-        <dd class="mt-0.5 font-medium">{user.email}</dd>
-      </div>
-    </dl>
-    <p class="mt-4 text-text-soft">
-      Editar el nombre y elegir tus días de lectura llega en la Tanda 4.
-    </p>
+  <Card>
+    <ScheduleEditor
+      client:load
+      initialName={user.name}
+      initialScheduledDays={profile.scheduledDays}
+      initialDailyGoalMinutes={profile.dailyGoalMinutes}
+      initialBookTitle={profile.currentBookTitle}
+      initialTimezone={profile.timezone}
+      goalOptions={GOAL_OPTIONS}
+      onboarding={onboarding}
+    />
   </Card>
+
+  <p class="mt-4 text-sm text-text-soft">
+    Cuenta: {user.email}
+  </p>
 </AppLayout>
