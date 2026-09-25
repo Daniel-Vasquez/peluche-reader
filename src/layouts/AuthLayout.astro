@@ -1,5 +1,6 @@
 ---
 import BaseLayout from '@/layouts/BaseLayout.astro';
+import ThemeToggle from '@/components/ThemeToggle';
 
 interface Props {
   title: string;
@@ -13,12 +14,15 @@ const appName = import.meta.env.PUBLIC_APP_NAME ?? 'Peluche Reader';
 
 <BaseLayout title={title}>
   <main class="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-6 py-16">
-    <a
-      href="/"
-      class="mb-8 text-sm font-medium tracking-wide text-primary uppercase hover:underline"
-    >
-      {appName}
-    </a>
+    <div class="mb-8 flex items-center justify-between gap-4">
+      <a
+        href="/"
+        class="text-sm font-medium tracking-wide text-primary uppercase hover:underline"
+      >
+        {appName}
+      </a>
+      <ThemeToggle client:load />
+    </div>
 
     <h1 class="text-2xl font-semibold">{heading}</h1>
     <p class="mt-2 mb-8 text-text-soft">{subheading}</p>

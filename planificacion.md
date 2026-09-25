@@ -90,7 +90,11 @@ títulos con peso ("El refugio de Daniel Vásquez").
    `readEnvOr`). **Nunca `process.env.X` directo.** Motivo en 0.5.
 12. **Nunca muestres el correo donde quepa el nombre.** La personalización usa
    `user.name` (ver 0.3); el correo solo aparece como dato de la cuenta.
-13. **Todo mensaje de Zod, en español — y también el del tipo.** Zod emite los
+13. **El toggle de tema va en TODAS las páginas**, incluidas las públicas
+   (`/`, `/login`, `/registro`). Es una función del producto, no un adorno del
+   área privada: quien llega por primera vez es justo quien más lo busca. Cada
+   layout tiene que montarlo.
+14. **Todo mensaje de Zod, en español — y también el del tipo.** Zod emite los
    suyos en inglés. Poner el texto solo en `.min()` / `.max()` no basta: si el
    campo **falta** o llega con **otro tipo**, esos refinamientos no se evalúan y
    responde `"Invalid input: expected string, received undefined"`. El mensaje va
@@ -416,7 +420,18 @@ primer pintado:
 </script>
 ```
 
-**`src/pages/index.astro`** — landing mínima con `export const prerender = true;`.
+**`src/pages/index.astro`** — landing con `export const prerender = false;`.
+
+**No se prerenderiza a propósito.** La landing tiene que saber si ya hay sesión:
+ofrecer "Crear cuenta" a alguien que ya entró desorienta, y dejarle sin salida
+—ni toggle de tema ni cerrar sesión— desde la primera pantalla de la app es peor.
+Con sesión muestra "Seguir leyendo, {nombre}", "Ver mi progreso" y el botón de
+salir. El coste de renderizarla en servidor es mínimo: no consulta la base de
+datos, solo lee `Astro.locals.user`, que el middleware ya resolvió.
+
+> Recuerda que el middleware **cortocircuita en `context.isPrerendered`**: una
+> página prerenderizada siempre tiene `Astro.locals.user === null`, así que no
+> puede reaccionar a la sesión ni con un truco.
 
 **`.gitignore`** — añadir `.env`, `.vercel`, `node_modules`, `dist`.
 
@@ -974,6 +989,15 @@ useEffect(() => {
 
 Accesibilidad: `aria-pressed={isDark}` y un `aria-label` que describe la acción
 ("Cambiar a tema claro"), no el estado.
+
+**El toggle se monta en los tres layouts**, no solo en el privado:
+
+| Layout | Páginas | Qué lleva la cabecera |
+|---|---|---|
+| `BaseLayout` | — | solo el `<script is:inline>` del tema |
+| `AuthLayout` | `/login`, `/registro` | logo + `ThemeToggle` |
+| `AppLayout` | `/app`, `/progreso`, `/ajustes` | logo + nav + `ThemeToggle` + `SignOutButton` |
+| `index.astro` | `/` | logo + `ThemeToggle` + `SignOutButton` si hay sesión |
 
 **`src/layouts/AppLayout.astro`** — props `title`, `heading?`, `subheading?`.
 Exige `Astro.locals.user` (el middleware ya lo garantiza) y pinta:
@@ -1917,7 +1941,14 @@ leyendo **"Influencia: La Psicología de la Persuasión"**:
 - **Zona horaria**: si `Intl...timeZone` del navegador difiere del perfil, ofrecer
   actualizarla (un viaje no debe romper la contabilidad de días).
 
-### 9.3 Despliegue en Vercel
+### 9.3 `npm run preview` no funciona con el adaptador de Vercel
+
+`astro preview` aborta con *"Preview server process exited before becoming
+ready"*: el adaptador de Vercel no trae servidor de previsualización. Para
+probar un build de producción en local hace falta `vercel dev`
+(`npm i -g vercel`). El día a día se verifica con `npm run dev`.
+
+### 9.4 Despliegue en Vercel
 ```bash
 npm i -g vercel
 vercel link
@@ -2007,6 +2038,35 @@ días 1–5; los días 6 y 7 registran `miss` **sin pérdida** (tope alcanzado).
 | 7 | Integración | recargar no duplica perritos |
 | 8 | `/progreso` | gráficas siguen el tema |
 | 9 | Producción | flujo completo en el dominio |
+
+### Verificar en un navegador de verdad
+
+`curl` no ejecuta JavaScript, así que no puede comprobar hidratación, clics ni
+cambios de tema. Para eso, un Chrome headless **aislado del proyecto** (no añadas
+la dependencia al `package.json` de la app):
+
+```bash
+mkdir -p /tmp/bt && cd /tmp/bt && npm init -y && npm install playwright-core
+```
+
+```js
+import { chromium } from 'playwright-core';
+const browser = await chromium.launch({
+  executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  headless: true,
+});
+const page = await browser.newPage();
+page.on('pageerror', (e) => console.log('pageerror:', e.message));
+page.on('console', (m) => m.type() === 'error' && console.log('console:', m.text()));
+```
+
+Comprueba el tema por el **color computado**, no por la clase: que `<html>` tenga
+`dark` no demuestra que la paleta cambie.
+
+```js
+await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+// claro: rgb(250, 250, 250)   oscuro: rgb(11, 17, 32)
+```
 
 **Regla para la IA desarrolladora:** no empieces una tanda sin que la anterior
 cumpla su criterio de aceptación. Si una tanda te obliga a modificar código de

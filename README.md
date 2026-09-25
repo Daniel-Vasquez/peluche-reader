@@ -31,7 +31,7 @@ npm run dev              # http://localhost:4321
 | `npm run dev` | Servidor de desarrollo |
 | `npm run build` | Build de producción (salida en `.vercel/output`) |
 | `npm run typecheck` | `tsc --noEmit` sobre todo el proyecto |
-| `npm run preview` | Previsualiza el build |
+| `npm run preview` | **No funciona** con el adaptador de Vercel; usa `vercel dev` |
 | `npm run db:init` | Crea los índices de MongoDB |
 | `npm run db:reset` | Limpia las colecciones (requiere `ALLOW_DB_RESET=yes`) |
 | `npm run db:seed` | Genera datos de demostración |
