@@ -32,7 +32,31 @@ entorno serverless (donde las conexiones son el recurso escaso). Por eso:
   creados por script (`scripts/db-init.ts`). La validación de entrada la hace
   **Zod** en los endpoints, no la DB.
 
-### 0.3 Convenciones no negociables
+### 0.3 El nombre del usuario
+
+El nombre se pide **solo al registrarse**. El inicio de sesión sigue siendo
+**correo + contraseña** y nada más.
+
+Ese nombre es la **fuente única de personalización** de toda la app: saludos,
+títulos de página, el nombre del refugio y los textos de la gamificación.
+
+Reglas en `src/lib/name.ts`, compartidas por el formulario de React y por el hook
+de Better Auth del servidor — la validación tiene que ser idéntica en los dos
+lados porque cualquiera puede hacer POST a `/api/auth/sign-up/email` sin pasar
+por el formulario:
+
+| Función | Qué hace |
+|---|---|
+| `normalizeName(raw)` | recorta extremos y colapsa espacios internos |
+| `checkName(raw)` | normaliza y valida; devuelve el mensaje en español ya listo |
+| `firstName(full)` | primera palabra, para saludos cortos ("Hola, Daniel") |
+
+Longitud: `NAME_MIN_LENGTH = 2`, `NAME_MAX_LENGTH = 60`.
+
+Uso: **`firstName()` para saludos** e interpelaciones; **nombre completo** para
+títulos con peso ("El refugio de Daniel Vásquez").
+
+### 0.4 Convenciones no negociables
 
 1. **Alias de import**: `@/*` → `src/*` (configurar en `tsconfig.json`).
 2. **`dayKey`**: toda fecha de negocio se guarda como `string` `"YYYY-MM-DD"`
@@ -56,8 +80,10 @@ entorno serverless (donde las conexiones son el recurso escaso). Por eso:
    declara como `"@/*": ["./src/*"]` (ruta relativa al `tsconfig.json`).
 11. **Variables de entorno solo por `@/lib/env`** (`readEnv` / `requireEnv` /
    `readEnvOr`). **Nunca `process.env.X` directo.** Motivo en 0.5.
+12. **Nunca muestres el correo donde quepa el nombre.** La personalización usa
+   `user.name` (ver 0.3); el correo solo aparece como dato de la cuenta.
 
-### 0.4 Las variables de entorno privadas NO están en `process.env`
+### 0.5 Las variables de entorno privadas NO están en `process.env`
 
 Esta es la trampa que rompe el proyecto entero si se ignora:
 
@@ -93,7 +119,7 @@ tiempo de build e incrustaría el secreto en el bundle.
 > scripts de `scripts/` no podrían importarlo, y la conexión a Mongo es
 > compartida entre los dos mundos.
 
-### 0.5 Mapa de archivos final (referencia)
+### 0.6 Mapa de archivos final (referencia)
 
 ```
 reading-app/
@@ -117,6 +143,7 @@ reading-app/
     │   ├── auth.ts               # instancia servidor Better Auth
     │   ├── auth-client.ts        # cliente React
     │   ├── env.ts                # lector de variables (process.env + import.meta.env)
+    │   ├── name.ts               # reglas del nombre (cliente + servidor)
     │   ├── time.ts               # dayKey / weekKey / ISO weekday
     │   ├── db/
     │   │   ├── client.ts         # conexión cacheada
@@ -731,8 +758,27 @@ declare global {
 
 **`src/components/auth/AuthForm.tsx`** — un único componente React con prop
 `mode: 'login' | 'register'`:
-- Campos: email, password (y `name` opcional en registro; si se omite, usar la
-  parte previa a la `@` del email, porque Better Auth lo exige).
+- Campos: **`name` (solo en registro, obligatorio y primero del formulario)**,
+  email y password. En login **no hay campo de nombre**.
+- El nombre se valida con `checkName()` de `@/lib/name` antes de enviar, y el
+  servidor lo revalida en `databaseHooks.user.create.before`:
+
+  ```ts
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (user) => {
+          const result = checkName(String(user.name ?? ''));
+          if (!result.ok) throw new APIError('BAD_REQUEST', { message: result.error });
+          return { data: { ...user, name: result.name } };
+        },
+      },
+    },
+  }
+  ```
+
+  `APIError` se importa de `better-auth/api`. El hook además **normaliza**:
+  `"  Daniel   Vásquez  "` se guarda como `"Daniel Vásquez"`.
 - `signUp.email({ email, password, name })` / `signIn.email({ email, password })`.
 - Errores en español mapeados por **código**, no por mensaje. Los códigos reales
   están en `@better-auth/core/dist/error/codes.mjs`. Verificados contra el
@@ -769,6 +815,11 @@ declare global {
 - `/login` y `/registro` **con** sesión → 302 a `/app`.
 - `npm run build` prerenderiza en milisegundos (prueba de que el guard
   `isPrerendered` evita conectar a Mongo en el build).
+- `/registro` pide nombre, correo y contraseña; `/login` **solo** correo y
+  contraseña.
+- Un POST directo a `sign-up/email` con `name: "   "` o `"D"` devuelve 400 con el
+  mensaje en español: la validación no depende del formulario.
+- El nombre guardado aparece en el saludo (`firstName`) y en el título.
 
 > **Si pruebas con `curl`**: Astro trae su propia protección CSRF y rechaza todo
 > POST sin cabecera `Origin` con *"Cross-site POST form submissions are
@@ -905,6 +956,10 @@ const PatchSchema = z.object({
 > perder ni ganar por compromiso y rompería la narrativa del juego.
 
 **`src/components/ScheduleEditor.tsx`** (React, `client:load`)
+- **Campo de nombre**, precargado con `user.name`. Es editable aquí porque el
+  nombre gobierna toda la personalización y el usuario tiene que poder
+  corregirlo sin borrar la cuenta. Se guarda con `authClient.updateUser({ name })`
+  y se valida con el mismo `checkName()` de `@/lib/name`.
 - 7 chips L–M–X–J–V–S–D (valores ISO 1..7), multiselección.
 - Input de libro actual (placeholder: `Influencia: La Psicología de la Persuasión`).
 - Select de meta diaria: 10 / 15 / 20 / 30 min.
@@ -939,7 +994,9 @@ Confirmar tu zona horaria real para `PUBLIC_DEFAULT_TIMEZONE` (asumo
 `America/Bogota`).
 
 ### Criterio de aceptación
-Cambiar los días en `/ajustes`, recargar, y ver la selección persistida en Mongo.
+- Cambiar los días en `/ajustes`, recargar, y ver la selección persistida en Mongo.
+- Cambiar el nombre en `/ajustes` actualiza el saludo de `/app` y el título de la
+  página.
 
 ---
 

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { signIn, signUp } from '@/lib/auth-client';
+import { checkName, NAME_MAX_LENGTH, NAME_MIN_LENGTH } from '@/lib/name';
 
 type Mode = 'login' | 'register';
 
@@ -49,6 +50,7 @@ const inputClass =
   'placeholder:text-text-soft/70 transition focus:border-primary focus:outline-none';
 
 export default function AuthForm({ mode, next }: Props) {
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -60,16 +62,23 @@ export default function AuthForm({ mode, next }: Props) {
     event.preventDefault();
     if (pending) return;
 
+    // Mismas reglas que aplica el servidor en el hook de Better Auth.
+    let cleanName = '';
+    if (mode === 'register') {
+      const nameCheck = checkName(name);
+      if (!nameCheck.ok) {
+        setError(nameCheck.error);
+        return;
+      }
+      cleanName = nameCheck.name;
+    }
+
     setPending(true);
     setError(null);
 
-    // Better Auth exige `name` al registrar; la app no lo pide, así que se
-    // deriva del correo en lugar de añadir un campo que nadie quiere rellenar.
-    const derivedName = email.split('@')[0] || 'Lector';
-
     const result =
       mode === 'register'
-        ? await signUp.email({ email, password, name: derivedName })
+        ? await signUp.email({ email, password, name: cleanName })
         : await signIn.email({ email, password });
 
     if (result.error) {
@@ -90,6 +99,30 @@ export default function AuthForm({ mode, next }: Props) {
 
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-4">
+      {mode === 'register' && (
+        <div>
+          <label htmlFor="name" className="mb-1.5 block text-sm font-medium">
+            ¿Cómo te llamas?
+          </label>
+          <input
+            id="name"
+            name="name"
+            type="text"
+            autoComplete="name"
+            required
+            minLength={NAME_MIN_LENGTH}
+            maxLength={NAME_MAX_LENGTH}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Tu nombre"
+            className={inputClass}
+          />
+          <p className="mt-1.5 text-sm text-text-soft">
+            Así te llamaremos en la app y en tu refugio.
+          </p>
+        </div>
+      )}
+
       <div>
         <label htmlFor="email" className="mb-1.5 block text-sm font-medium">
           Correo electrónico

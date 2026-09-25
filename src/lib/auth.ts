@@ -1,5 +1,7 @@
 import { betterAuth } from 'better-auth';
+import { APIError } from 'better-auth/api';
 import { mongodbAdapter } from 'better-auth/adapters/mongodb';
+import { checkName } from '@/lib/name';
 import { getDb, getMongoClient } from '@/lib/db/client';
 import { readEnv, readEnvOr, requireEnv } from '@/lib/env';
 
@@ -51,6 +53,23 @@ async function createAuth() {
       defaultCookieAttributes: {
         sameSite: 'lax',
         secure: readEnv('NODE_ENV') === 'production',
+      },
+    },
+
+    databaseHooks: {
+      user: {
+        create: {
+          // El nombre es la base de toda la personalización, así que se valida y
+          // normaliza también aquí: el formulario de React no es una barrera
+          // (cualquiera puede hacer POST a /api/auth/sign-up/email directamente).
+          before: async (user) => {
+            const result = checkName(String(user.name ?? ''));
+            if (!result.ok) {
+              throw new APIError('BAD_REQUEST', { message: result.error });
+            }
+            return { data: { ...user, name: result.name } };
+          },
+        },
       },
     },
 

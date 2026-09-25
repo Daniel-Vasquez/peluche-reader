@@ -42,7 +42,13 @@ tanda sin que la anterior cumpla su criterio de aceptación.
    ejecutarse dos veces con el mismo resultado.
 7. **Balance del juego**: todos los números viven en `src/lib/game/config.ts`.
    Si dudas de un valor, pregunta en vez de inventarlo.
-8. Nada de `any`; `strict: true`.
+8. **El nombre manda en la personalización.** Se pide solo al registrarse (el
+   login es correo + contraseña). Usa `firstName()` de `@/lib/name` para saludos
+   y el nombre completo para títulos. Nunca muestres el correo donde quepa el
+   nombre.
+9. **Variables de entorno solo por `@/lib/env`**, nunca `process.env.X` directo:
+   `astro dev` carga el `.env` en `import.meta.env` y deja `process.env` vacío.
+10. Nada de `any`; `strict: true`.
 
 ### Sistema de diseño
 
