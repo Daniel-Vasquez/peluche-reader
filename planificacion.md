@@ -145,8 +145,47 @@ tiempo de build e incrustaría el secreto en el bundle.
 exista la tubería de Vite, así que **no ve el `.env`**: su
 `process.env.PUBLIC_SITE_URL` es `undefined` en local y `site` cae al valor por
 defecto. En Vercel sí funciona, porque la plataforma rellena `process.env` en el
-build. No se puede usar `@/lib/env` ahí (el alias tampoco existe todavía), así
-que el patrón correcto es `process.env.X ?? 'valor-por-defecto'`.
+build. No se puede usar `@/lib/env` ahí (el alias tampoco existe todavía), así que
+la normalización se duplica dentro del propio config.
+
+#### ⚠️ Los valores del `.env` van SIN COMILLAS
+
+**El panel de Vercel no limpia lo que pegas.** Copiar
+`MONGODB_URI="mongodb+srv://…"` del `.env.example` con las comillas mete las
+comillas *dentro* del valor, y eso rompe tres cosas en silencio:
+
+| Variable con comillas | Qué falla |
+|---|---|
+| `PUBLIC_SITE_URL` | `astro build` aborta con `[config] ! Invalid URL` |
+| `BETTER_AUTH_URL` | `new URL()` lanza → la autenticación deja de funcionar |
+| `MONGODB_URI` | el driver no reconoce el esquema `"mongodb+srv://` |
+
+Se defiende en **tres capas**:
+
+1. **`.env.example` sin comillas**, que es la causa raíz. Con un aviso arriba.
+2. **`readEnv` quita las comillas envolventes** (`unwrap`), así que cubre a todos
+   los consumidores de golpe. Ningún valor legítimo del proyecto empieza y acaba
+   por comilla —URLs, secreto base64, identificadores IANA—, así que es seguro.
+3. **`astro.config.mjs` normaliza `site` por su cuenta**, porque no puede importar
+   `@/lib/env`: quita comillas, añade `https://` si falta el protocolo, valida con
+   `new URL()` y **cae al valor por defecto con un aviso en vez de tumbar el
+   build**.
+
+```js
+function resolveSite(raw) {
+  const fallback = 'http://localhost:4321';
+  if (!raw) return fallback;
+  let value = raw.trim().replace(/^['"]|['"]$/g, '').trim();
+  if (value === '') return fallback;
+  if (!/^https?:\/\//i.test(value)) value = `https://${value}`;   // dominio desnudo
+  try { return new URL(value).origin; } catch { /* avisa */ return fallback; }
+}
+```
+
+> **Excepción a la regla**: si un valor contiene `#` o espacios (una contraseña de
+> Mongo, por ejemplo), hay que encerrarlo entre comillas **solo en el `.env`
+> local**, porque dotenv trataría el `#` como comienzo de comentario. Como
+> `readEnv` las quita, hacerlo es inofensivo.
 
 ### 0.6 Mapa de archivos final (referencia)
 
@@ -2189,7 +2228,8 @@ vercel link
 vercel --prod
 ```
 Checklist antes de publicar:
-- [ ] Variables del `.env.example` cargadas en Vercel (Production + Preview).
+- [ ] Variables del `.env.example` cargadas en Vercel (Production + Preview),
+      **sin comillas** (ver 0.5).
 - [ ] `BETTER_AUTH_URL`, `PUBLIC_BETTER_AUTH_URL`, `PUBLIC_SITE_URL` con el
       dominio `https://` real.
 - [ ] Atlas: Network Access `0.0.0.0/0`.

@@ -14,6 +14,24 @@
 
 type EnvSource = Record<string, string | undefined>;
 
+/**
+ * Quita comillas envolventes y espacios.
+ *
+ * El panel de Vercel **no** limpia el valor que pegas: si copias
+ * `MONGODB_URI="mongodb+srv://…"` del `.env.example` con las comillas incluidas,
+ * llegan como parte del valor. Y eso rompe en silencio cosas difíciles de
+ * diagnosticar: `new URL('"http://…"')` lanza `Invalid URL` (tumba el build por
+ * `site` y la autenticación por `baseURL`), y el driver de Mongo no reconoce el
+ * esquema `"mongodb+srv://`.
+ *
+ * Ningún valor legítimo del proyecto empieza y acaba por comilla —las URLs, el
+ * secreto en base64 y los identificadores IANA no las contienen—, así que
+ * normalizar aquí es seguro y cubre a todos los consumidores de golpe.
+ */
+function unwrap(value: string): string {
+  return value.trim().replace(/^(['"])([\s\S]*)\1$/, '$2').trim();
+}
+
 /** `import.meta.env` si existe en este runtime. */
 function metaEnv(): EnvSource | undefined {
   // Acceso dinámico a propósito: con una clave literal
@@ -32,8 +50,10 @@ function procEnv(): EnvSource | undefined {
 export function readEnv(name: string): string | undefined {
   // `process.env` primero: en Vercel es la fuente autoritativa.
   for (const source of [procEnv(), metaEnv()]) {
-    const value = source?.[name];
-    if (value !== undefined && value !== '') return value;
+    const raw = source?.[name];
+    if (raw === undefined) continue;
+    const value = unwrap(raw);
+    if (value !== '') return value;
   }
   return undefined;
 }
