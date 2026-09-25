@@ -1,0 +1,17 @@
+---
+import AuthLayout from '@/layouts/AuthLayout.astro';
+import AuthForm from '@/components/auth/AuthForm';
+
+// El middleware ya redirige a /app si hay sesión.
+export const prerender = false;
+
+const next = Astro.url.searchParams.get('next') ?? undefined;
+---
+
+<AuthLayout
+  title="Entrar"
+  heading="Bienvenido de vuelta"
+  subheading="Tus perritos te estaban esperando."
+>
+  <AuthForm mode="login" next={next} client:load />
+</AuthLayout>

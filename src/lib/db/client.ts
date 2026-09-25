@@ -1,4 +1,5 @@
 import { MongoClient, type Db } from 'mongodb';
+import { requireEnv } from '@/lib/env';
 
 /**
  * Conexión única a MongoDB, cacheada en el ámbito global.
@@ -17,16 +18,6 @@ const GLOBAL_KEY = '__readingAppMongoClient__';
 type GlobalWithMongo = typeof globalThis & {
   [GLOBAL_KEY]?: Promise<MongoClient>;
 };
-
-function requireEnv(name: 'MONGODB_URI' | 'MONGODB_DB_NAME'): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(
-      `Falta la variable de entorno ${name}. Cópiala de .env.example a .env.`,
-    );
-  }
-  return value;
-}
 
 export function getMongoClient(): Promise<MongoClient> {
   const g = globalThis as GlobalWithMongo;

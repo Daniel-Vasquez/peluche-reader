@@ -54,8 +54,46 @@ entorno serverless (donde las conexiones son el recurso escaso). Por eso:
    la versión que instala el proyecto. Los `.astro` los valida `astro build`.
 10. **`paths` sin `baseUrl`**: TypeScript 7 eliminó `baseUrl`, así que el alias se
    declara como `"@/*": ["./src/*"]` (ruta relativa al `tsconfig.json`).
+11. **Variables de entorno solo por `@/lib/env`** (`readEnv` / `requireEnv` /
+   `readEnvOr`). **Nunca `process.env.X` directo.** Motivo en 0.5.
 
-### 0.4 Mapa de archivos final (referencia)
+### 0.4 Las variables de entorno privadas NO están en `process.env`
+
+Esta es la trampa que rompe el proyecto entero si se ignora:
+
+| Contexto | Dónde acaba el `.env` |
+|---|---|
+| `tsx` (scripts `db:*`) | `process.env`, vía `dotenv` |
+| Vercel en producción | `process.env`, vía la plataforma |
+| **`astro dev`** | **`import.meta.env` únicamente** |
+
+En desarrollo, Vite carga el `.env` en `import.meta.env` y **deja `process.env`
+vacío** para las variables sin prefijo `PUBLIC_`. Un `process.env.MONGODB_URI`
+devuelve `undefined` y toda la app responde 500.
+
+Por eso existe `src/lib/env.ts`, que consulta los dos orígenes en orden
+(`process.env` primero, porque en Vercel es el autoritativo):
+
+```ts
+export function readEnv(name: string): string | undefined {
+  for (const source of [procEnv(), metaEnv()]) {
+    const value = source?.[name];
+    if (value !== undefined && value !== '') return value;
+  }
+  return undefined;
+}
+```
+
+`metaEnv()` lee **el objeto completo** `import.meta.env` con acceso dinámico, no
+`import.meta.env.MONGODB_URI`: con una clave literal Vite sustituiría el valor en
+tiempo de build e incrustaría el secreto en el bundle.
+
+> **No se usa `astro:env`** (que existe en Astro 7 y sería la vía idiomática)
+> porque es un módulo virtual que solo resuelve dentro del build de Astro: los
+> scripts de `scripts/` no podrían importarlo, y la conexión a Mongo es
+> compartida entre los dos mundos.
+
+### 0.5 Mapa de archivos final (referencia)
 
 ```
 reading-app/
@@ -78,6 +116,7 @@ reading-app/
     ├── lib/
     │   ├── auth.ts               # instancia servidor Better Auth
     │   ├── auth-client.ts        # cliente React
+    │   ├── env.ts                # lector de variables (process.env + import.meta.env)
     │   ├── time.ts               # dayKey / weekKey / ISO weekday
     │   ├── db/
     │   │   ├── client.ts         # conexión cacheada
@@ -97,6 +136,7 @@ reading-app/
     ├── components/
     │   ├── ui/                   # Button, Card, Toggle…
     │   ├── auth/AuthForm.tsx
+    │   ├── auth/SignOutButton.tsx
     │   ├── ThemeToggle.tsx
     │   ├── ScheduleEditor.tsx
     │   ├── ReadingTimer.tsx
@@ -104,6 +144,7 @@ reading-app/
     │   └── charts/
     ├── layouts/
     │   ├── BaseLayout.astro
+    │   ├── AuthLayout.astro
     │   └── AppLayout.astro
     └── pages/
         ├── index.astro           # landing (prerender)
@@ -519,51 +560,94 @@ protegidas mediante middleware. **Sin** verificación de email, **sin** 2FA,
 
 ### Dependencias
 ```bash
-npm install better-auth
+npm install better-auth @better-auth/mongo-adapter
 ```
 
-### Nota de implementación (importante)
-El adaptador oficial de MongoDB vive **dentro del paquete core**:
-`import { mongodbAdapter } from 'better-auth/adapters/mongodb'`.
-Si al instalar resulta que tu versión lo expone como paquete aparte
-(`@better-auth/mongo-adapter`), instala ese e intercambia **solo la línea de
-import** — la firma `mongodbAdapter(db)` es la misma. Verifica con:
-```bash
-node -e "console.log(Object.keys(require('better-auth/adapters/mongodb')))"
+> Versiones instaladas (verificadas): `better-auth@1.7.6`,
+> `@better-auth/mongo-adapter@1.7.6`.
+
+### El adaptador hay que instalarlo aparte
+
+`better-auth/adapters/mongodb` es **solo un re-export** de
+`@better-auth/mongo-adapter`, que **no** se instala como dependencia transitiva:
+
 ```
+// node_modules/better-auth/dist/adapters/mongodb-adapter/index.d.mts
+export * from "@better-auth/mongo-adapter";
+```
+
+Sin instalarlo, el import falla en tiempo de ejecución. Se importa desde el
+re-export del core (no desde el paquete directo, que sería una dependencia
+implícita):
+
+```ts
+import { mongodbAdapter } from 'better-auth/adapters/mongodb';
+```
+
+Firma real: `mongodbAdapter(db: Db, config?: { client?, transaction?, usePlural?, debugLogs? })`.
+**Pasar `client` habilita las transacciones**, que Atlas soporta al ser un
+replica set. En un MongoDB standalone habría que poner `transaction: false`.
 
 ### Archivos
 
-**`src/lib/auth.ts`**
+**`src/lib/auth.ts`** — instancia **perezosa y cacheada**, no `export const auth`.
+
+`betterAuth()` necesita un `Db` ya conectado, así que un `await getDb()` en el
+tope del módulo abriría una conexión a Mongo durante `astro build` (Astro carga
+el entrypoint del servidor para prerenderizar). Con `getAuth()` la conexión solo
+ocurre al atender la primera petición real; el prerender del build tarda ~150 ms
+en vez de esperar a Atlas.
+
 ```ts
-import { betterAuth } from 'better-auth';
-import { mongodbAdapter } from 'better-auth/adapters/mongodb';
-import { getDb } from '@/lib/db/client';
+async function createAuth() {
+  const [db, client] = await Promise.all([getDb(), getMongoClient()]);
+  const secret = requireEnv('BETTER_AUTH_SECRET');
+  const vercelUrl = readEnv('VERCEL_URL');
 
-const db = await getDb();
+  return betterAuth({
+    database: mongodbAdapter(db, { client }),   // `client` → transacciones
+    secret,
+    baseURL: readEnvOr('BETTER_AUTH_URL', 'http://localhost:4321'),
 
-export const auth = betterAuth({
-  database: mongodbAdapter(db),
-  secret: process.env.BETTER_AUTH_SECRET!,
-  baseURL: process.env.BETTER_AUTH_URL!,
-  emailAndPassword: {
-    enabled: true,
-    autoSignIn: true,            // tras registrarse, sesión iniciada
-    requireEmailVerification: false,
-    minPasswordLength: 8,
-  },
-  session: {
-    expiresIn: 60 * 60 * 24 * 30,   // 30 días
-    updateAge: 60 * 60 * 24,        // refresca la cookie 1 vez/día
-    cookieCache: { enabled: true, maxAge: 5 * 60 },
-  },
-  advanced: {
-    defaultCookieAttributes: { sameSite: 'lax', secure: import.meta.env.PROD },
-  },
-});
+    emailAndPassword: {
+      enabled: true,
+      autoSignIn: true,              // tras registrarse, la sesión ya está abierta
+      requireEmailVerification: false,
+      minPasswordLength: 8,
+    },
+    session: {
+      expiresIn: 60 * 60 * 24 * 30,  // 30 días
+      updateAge: 60 * 60 * 24,       // refresca la cookie 1 vez al día como máximo
+      // Evita un viaje a Mongo en cada request del middleware, que corre en
+      // TODAS las rutas.
+      cookieCache: { enabled: true, maxAge: 5 * 60 },
+    },
+    advanced: {
+      defaultCookieAttributes: {
+        sameSite: 'lax',
+        secure: readEnv('NODE_ENV') === 'production',
+      },
+    },
+    // Los previews de Vercel tienen un dominio distinto en cada build.
+    trustedOrigins: vercelUrl ? [`https://${vercelUrl}`] : [],
+  });
+}
 
-export type Session = typeof auth.$Infer.Session;
+const GLOBAL_KEY = '__readingAppAuth__';
+
+export function getAuth(): ReturnType<typeof createAuth> {
+  const g = globalThis as GlobalWithAuth;
+  if (!g[GLOBAL_KEY]) g[GLOBAL_KEY] = createAuth();
+  return g[GLOBAL_KEY];
+}
+
+export type Auth = Awaited<ReturnType<typeof createAuth>>;
+export type Session = Auth['$Infer']['Session'];
+export type SessionUser = Session['user'];
 ```
+
+Solo hay **dos** puntos de uso, así que el `await getAuth()` no molesta: el
+middleware y la ruta `/api/auth/[...all].ts`.
 
 **`src/lib/auth-client.ts`**
 ```ts
@@ -578,43 +662,69 @@ export const { signIn, signUp, signOut, useSession } = authClient;
 **`src/pages/api/auth/[...all].ts`**
 ```ts
 import type { APIRoute } from 'astro';
-import { auth } from '@/lib/auth';
+import { getAuth } from '@/lib/auth';
 
 export const prerender = false;
-export const ALL: APIRoute = ({ request }) => auth.handler(request);
+export const ALL: APIRoute = async ({ request }) => {
+  const auth = await getAuth();
+  return auth.handler(request);
+};
 ```
 
 **`src/middleware.ts`** — resuelve la sesión una vez por request y protege rutas.
+
+Dos cortocircuitos **obligatorios** antes de tocar la sesión:
+
+1. **`context.isPrerendered`** → las rutas prerenderizadas se generan en
+   `astro build`, cuando no existe petición ni usuario. Sin este guard, el build
+   abriría una conexión a MongoDB.
+2. **`/api/auth/*`** → el handler de Better Auth gestiona sus propias cookies;
+   pedirle la sesión aquí sería trabajo duplicado en cada login.
+
 ```ts
-import { defineMiddleware } from 'astro:middleware';
-import { auth } from '@/lib/auth';
-
-const PROTECTED = ['/app', '/progreso', '/ajustes'];
-const GUEST_ONLY = ['/login', '/registro'];
-
-export const onRequest = defineMiddleware(async (ctx, next) => {
-  const data = await auth.api.getSession({ headers: ctx.request.headers });
-  ctx.locals.user = data?.user ?? null;
-  ctx.locals.session = data?.session ?? null;
-
-  const path = ctx.url.pathname;
-  if (!ctx.locals.user && PROTECTED.some((p) => path.startsWith(p))) {
-    return ctx.redirect(`/login?next=${encodeURIComponent(path)}`, 302);
+export const onRequest = defineMiddleware(async (context, next) => {
+  if (context.isPrerendered) {
+    context.locals.user = null;
+    context.locals.session = null;
+    return next();
   }
-  if (ctx.locals.user && GUEST_ONLY.includes(path)) {
-    return ctx.redirect('/app', 302);
+
+  const path = context.url.pathname;
+  if (path.startsWith('/api/auth/')) {
+    context.locals.user = null;
+    context.locals.session = null;
+    return next();
+  }
+
+  const auth = await getAuth();
+  const data = await auth.api.getSession({ headers: context.request.headers });
+  context.locals.user = data?.user ?? null;
+  context.locals.session = data?.session ?? null;
+
+  if (!context.locals.user && PROTECTED_PREFIXES.some((p) => path.startsWith(p))) {
+    return context.redirect(`/login?next=${encodeURIComponent(path)}`, 302);
+  }
+  if (context.locals.user && GUEST_ONLY_PATHS.includes(path)) {
+    return context.redirect('/app', 302);
   }
   return next();
 });
 ```
 
-**`src/env.d.ts`**
+**`src/env.d.ts`** — los tipos de `Locals` se derivan de Better Auth, no se
+escriben a mano. Como el archivo tiene `import`, es un módulo: el namespace `App`
+tiene que ir dentro de `declare global` o TypeScript no lo verá.
+
 ```ts
 /// <reference types="astro/client" />
-declare namespace App {
-  interface Locals {
-    user: { id: string; email: string; name: string } | null;
-    session: { id: string; userId: string; expiresAt: Date } | null;
+import type { SessionUser, Session } from '@/lib/auth';
+
+declare global {
+  namespace App {
+    interface Locals {
+      user: SessionUser | null;
+      session: Session['session'] | null;
+    }
   }
 }
 ```
@@ -624,9 +734,18 @@ declare namespace App {
 - Campos: email, password (y `name` opcional en registro; si se omite, usar la
   parte previa a la `@` del email, porque Better Auth lo exige).
 - `signUp.email({ email, password, name })` / `signIn.email({ email, password })`.
-- Errores en español mapeados desde el código de Better Auth
-  (`INVALID_EMAIL_OR_PASSWORD` → "Correo o contraseña incorrectos",
-  `USER_ALREADY_EXISTS` → "Ya existe una cuenta con ese correo").
+- Errores en español mapeados por **código**, no por mensaje. Los códigos reales
+  están en `@better-auth/core/dist/error/codes.mjs`. Verificados contra el
+  servidor:
+
+  | Escenario | Código devuelto | HTTP |
+  |---|---|---|
+  | Contraseña incorrecta | `INVALID_EMAIL_OR_PASSWORD` | 401 |
+  | Correo ya registrado | `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` | 422 |
+  | Contraseña < 8 caracteres | `PASSWORD_TOO_SHORT` | 400 |
+
+  > Ojo: en el registro duplicado Better Auth devuelve la variante
+  > `..._USE_ANOTHER_EMAIL`, no `USER_ALREADY_EXISTS`. Mapea **las dos**.
 - Al éxito: `window.location.href = next ?? '/app'` (recarga completa para que el
   middleware vea la cookie nueva).
 - Se monta con `client:load`.
@@ -642,9 +761,19 @@ declare namespace App {
 3. Si la DB tiene datos previos de pruebas: `ALLOW_DB_RESET=yes npm run db:reset`.
 
 ### Criterio de aceptación
-- Registrarse crea documentos en las colecciones `user` y `account`.
-- Cerrar y reabrir el navegador mantiene la sesión.
-- Visitar `/app` sin sesión redirige a `/login?next=%2Fapp`.
+- Registrarse crea documentos en `user`, `account` (con hash de contraseña) y
+  `session`.
+- La cookie `better-auth.session_token` sale con `Max-Age=2592000` (30 días),
+  `HttpOnly` y `SameSite=Lax`: es **persistente**, no de sesión de navegador.
+- `/app`, `/progreso` y `/ajustes` sin sesión → 302 a `/login?next=…`.
+- `/login` y `/registro` **con** sesión → 302 a `/app`.
+- `npm run build` prerenderiza en milisegundos (prueba de que el guard
+  `isPrerendered` evita conectar a Mongo en el build).
+
+> **Si pruebas con `curl`**: Astro trae su propia protección CSRF y rechaza todo
+> POST sin cabecera `Origin` con *"Cross-site POST form submissions are
+> forbidden"*. Añade `-H "Origin: http://localhost:4321"` y, en `sign-out`, un
+> cuerpo `-d '{}'`. Un navegador manda ambas cosas solo; no es un bug.
 
 ---
 

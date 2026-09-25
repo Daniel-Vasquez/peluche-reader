@@ -1,0 +1,16 @@
+---
+import AuthLayout from '@/layouts/AuthLayout.astro';
+import AuthForm from '@/components/auth/AuthForm';
+
+export const prerender = false;
+
+const next = Astro.url.searchParams.get('next') ?? undefined;
+---
+
+<AuthLayout
+  title="Crear cuenta"
+  heading="Abre tu refugio"
+  subheading="Empiezas con 7 perritos a tu cuidado. Solo necesitas un correo y una contraseña."
+>
+  <AuthForm mode="register" next={next} client:load />
+</AuthLayout>

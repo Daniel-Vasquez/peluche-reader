@@ -40,7 +40,7 @@ npm run dev              # http://localhost:4321
 
 - [x] **Tanda 0** · Scaffolding, adaptador de Vercel y sistema de diseño
 - [x] **Tanda 1** · Capa de datos (MongoDB): conexión, tipos, índices y scripts
-- [ ] Tanda 2 · Autenticación
+- [x] **Tanda 2** · Autenticación (Better Auth, email + contraseña)
 - [ ] Tanda 3 · Shell de la app y tema claro/oscuro
 - [ ] Tanda 4 · Días comprometidos
 - [ ] Tanda 5 · Cronómetro de lectura
