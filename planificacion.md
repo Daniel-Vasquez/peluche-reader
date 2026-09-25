@@ -4,6 +4,14 @@
 > Documento de ejecución para una IA desarrolladora. Cada **Tanda** es un paso
 > atómico: al terminarla el proyecto debe compilar (`npm run build`) y quedar
 > funcional, sin romper lo construido en tandas anteriores.
+>
+> **Qué tandas están hechas**: la lista con marcas está en
+> [`README.md`](./README.md). Este documento describe el destino; el README dice
+> por dónde va el camino.
+>
+> Los bloques de código son los **reales del proyecto**, no bocetos: cada tanda
+> se sincronizó con la implementación al terminarla, incluidas las trampas que
+> aparecieron al ejecutarla.
 
 ---
 
@@ -119,16 +127,25 @@ tiempo de build e incrustaría el secreto en el bundle.
 > scripts de `scripts/` no podrían importarlo, y la conexión a Mongo es
 > compartida entre los dos mundos.
 
+**Excepción: `astro.config.mjs`.** Ese archivo corre en Node puro antes de que
+exista la tubería de Vite, así que **no ve el `.env`**: su
+`process.env.PUBLIC_SITE_URL` es `undefined` en local y `site` cae al valor por
+defecto. En Vercel sí funciona, porque la plataforma rellena `process.env` en el
+build. No se puede usar `@/lib/env` ahí (el alias tampoco existe todavía), así
+que el patrón correcto es `process.env.X ?? 'valor-por-defecto'`.
+
 ### 0.6 Mapa de archivos final (referencia)
 
 ```
 reading-app/
-├── .env                          # (lo crea el usuario)
+├── .env                          # (lo crea el usuario; nunca se commitea)
 ├── .env.example
 ├── astro.config.mjs
 ├── tsconfig.json
 ├── package.json
-├── planificacion.md
+├── planificacion.md              # este documento
+├── README.md                     # puesta en marcha + estado de las tandas
+├── AGENTS.md                     # convenciones (CLAUDE.md es un symlink a él)
 ├── public/
 │   └── dogs/                     # sprites/ilustraciones del refugio
 ├── scripts/
@@ -150,6 +167,7 @@ reading-app/
     │   │   ├── collections.ts    # accesores tipados
     │   │   └── types.ts          # tipos de documento
     │   ├── game/
+    │   │   ├── preview.ts        # PROVISIONAL: cifras para la UI, se borra en la Tanda 6
     │   │   ├── config.ts         # constantes de balance
     │   │   ├── rewards.ts        # curva de recompensa (puro)
     │   │   ├── penalties.ts      # penalización + tope semanal (puro)
@@ -161,7 +179,10 @@ reading-app/
     │       ├── progress.ts
     │       └── gameState.ts
     ├── components/
-    │   ├── ui/                   # Button, Card, Toggle…
+    │   ├── ui/
+    │   │   ├── Button.tsx        # React: variantes primary / ghost / danger
+    │   │   ├── Card.astro        # Astro: cero JS en el cliente
+    │   │   └── Stat.astro        # Astro: cifra grande con tono semántico
     │   ├── auth/AuthForm.tsx
     │   ├── auth/SignOutButton.tsx
     │   ├── ThemeToggle.tsx
@@ -188,6 +209,45 @@ reading-app/
             ├── sessions/finish.ts
             └── progress/summary.ts
 ```
+
+### 0.7 Dependencias y scripts (referencia consolidada)
+
+Versiones verificadas en el proyecto. Cada tanda instala solo lo suyo; esta tabla
+es el estado final.
+
+| Paquete | Versión | Tanda | Para qué |
+|---|---|---|---|
+| `astro` | 7.3.5 | 0 | framework |
+| `@astrojs/react` | 7.0.0 | 0 | islas React |
+| `@astrojs/vercel` | 11.0.11 | 0 | adaptador de despliegue |
+| `react` · `react-dom` | 19.3.0 | 0 | los instala `astro add react` |
+| `@types/react` · `@types/react-dom` | 19.3.0 | 0 | idem, como devDependencies |
+| `tailwindcss` · `@tailwindcss/vite` | 4.3.3 | 0 | estilos |
+| `@types/node` · `tsx` | — | 0 | ejecutar los scripts de `scripts/` |
+| `mongodb` | 7.6.0 | 1 | driver nativo |
+| `zod` | 4.6.5 | 1 | validación de entrada en los endpoints |
+| `dotenv` | 18.0.3 | 1 | `.env` en los scripts (devDependency) |
+| `typescript` | 7.0.2 | 1 | `npm run typecheck` (devDependency) |
+| `better-auth` | 1.7.6 | 2 | autenticación |
+| `@better-auth/mongo-adapter` | 1.7.6 | 2 | **hay que instalarlo aparte** (ver Tanda 2) |
+| `clsx` | 2.1.1 | 3 | composición de clases |
+| `lucide-react` | 1.48.0 | 3 | iconos |
+| `vitest` | — | 6 | tests del motor de gamificación |
+| `recharts` | — | 8 | gráficas |
+
+**`@astrojs/check` no se instala**: no soporta TypeScript 7. Los `.ts`/`.tsx` los
+valida `npm run typecheck` y los `.astro`, `astro build`.
+
+| Script | Qué hace |
+|---|---|
+| `npm run dev` | servidor de desarrollo (`astro dev --background` para dejarlo en segundo plano) |
+| `npm run build` | build de producción en `.vercel/output` |
+| `npm run preview` | previsualiza el build |
+| `npm run typecheck` | `tsc --noEmit` sobre todo el proyecto |
+| `npm run db:init` | crea los 7 índices (idempotente) |
+| `npm run db:reset` | vacía las colecciones; exige `ALLOW_DB_RESET=yes` |
+| `npm run db:seed` | datos de demostración (Tanda 9) |
+| `npm test` | Vitest (Tanda 6) |
 
 ---
 
@@ -918,9 +978,10 @@ Exige `Astro.locals.user` (el middleware ya lo garantiza) y pinta:
 a ellos y sin las páginas daría 404. Cada uno con `AppLayout` + una `Card` que
 diga en qué tanda llega su contenido.
 
-`src/lib/game/preview.ts` mantiene las tres cifras que la interfaz ya menciona
+`src/lib/game/preview.ts` mantiene las cifras que la interfaz ya menciona
 (7 perritos, 10 min, −1) para no incrustar números sueltos en el marcado. **Se
-borra en la Tanda 6**, cuando `game/config.ts` pase a ser la fuente de verdad.
+borra en la Tanda 6**, cuando `game/config.ts` pase a ser la fuente de verdad:
+busca `GAME_PREVIEW` y sustituye cada uso por la constante de `GAME`.
 
 **Primitivas** — React solo donde hay interacción; lo demás, componentes Astro
 (cero JavaScript en el cliente):
