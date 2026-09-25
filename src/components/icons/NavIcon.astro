@@ -1,0 +1,61 @@
+---
+/**
+ * Iconos de la navegación, en SVG en línea.
+ *
+ * Son enlaces estáticos, así que no vale la pena montar una isla de React solo
+ * para dibujarlos: esto no envía ni un byte de JavaScript. Los trazados son los
+ * de Lucide (`book-open`, `chart-column`, `settings`), los mismos que usa
+ * `ThemeToggle`, para que el conjunto se vea coherente.
+ */
+export type NavIconName = 'hoy' | 'progreso' | 'ajustes';
+
+interface Props {
+  name: NavIconName;
+  class?: string;
+}
+
+const { name, class: className = 'h-4.5 w-4.5' } = Astro.props;
+---
+
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  aria-hidden="true"
+  class={className}
+>
+  {
+    name === 'hoy' && (
+      <>
+        <path d="M12 5v16" />
+        <path
+          d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"
+        />
+      </>
+    )
+  }
+  {
+    name === 'progreso' && (
+      <>
+        <path d="M3 3v16a2 2 0 0 0 2 2h16" />
+        <path d="M18 17V9" />
+        <path d="M13 17V5" />
+        <path d="M8 17v-3" />
+      </>
+    )
+  }
+  {
+    name === 'ajustes' && (
+      <>
+        <path
+          d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"
+        />
+        <circle cx="12" cy="12" r="3" />
+      </>
+    )
+  }
+</svg>

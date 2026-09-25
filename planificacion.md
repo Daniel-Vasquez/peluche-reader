@@ -1043,8 +1043,36 @@ Accesibilidad: `aria-pressed={isDark}` y un `aria-label` que describe la acción
 **`src/layouts/AppLayout.astro`** — props `title`, `heading?`, `subheading?`.
 Exige `Astro.locals.user` (el middleware ya lo garantiza) y pinta:
 
-- Header con logo, nav (`/app` "Hoy", `/progreso` "Progreso", `/ajustes`
-  "Ajustes"), `<ThemeToggle client:load />` y `<SignOutButton client:load />`.
+- **Cabecera `sticky top-0 z-50`**, siempre visible al hacer scroll.
+  `sticky`, no `fixed`: el elemento sigue ocupando su sitio en el flujo, así que
+  el contenido no queda tapado y **no hay que compensar con `padding-top`** en el
+  padre. El fondo tiene que ser opaco (`bg-surface`) o el contenido se
+  transparentaría al pasar por debajo.
+- Nav con `/app` "Hoy", `/progreso` "Progreso", `/ajustes` "Ajustes", más
+  `<ThemeToggle client:load />` y `<SignOutButton client:load />`.
+- **Cada item es `flex items-center gap-x-2` con icono + texto**, y el texto se
+  oculta por debajo de `md:`:
+
+  ```astro
+  <a class="flex items-center gap-x-2 rounded-card px-2.5 py-1.5 md:px-3">
+    <NavIcon name={icon} />
+    <span class="sr-only md:not-sr-only">{label}</span>
+  </a>
+  ```
+
+  **`sr-only md:not-sr-only`, no `hidden md:inline`.** Con `hidden` el texto sale
+  del árbol de accesibilidad y en móvil quedan tres iconos sin nombre; con
+  `sr-only` el enlace conserva su etiqueta siempre. Tampoco hace falta
+  `aria-label`, que duplicaría el nombre en escritorio.
+
+- **Los iconos son SVG en línea** (`src/components/icons/NavIcon.astro`), no una
+  isla de React: son enlaces estáticos y así no se envía ni un byte de
+  JavaScript. Los trazados son los de Lucide (`book-open`, `chart-column`,
+  `settings`), los mismos que usa `ThemeToggle`. Van con `aria-hidden="true"`,
+  porque el nombre lo pone el texto.
+- **El logotipo se oculta por debajo de `sm:`**: a 320 px no cabe junto a la
+  navegación y los controles, y partía en dos líneas engordando la cabecera. El
+  primer item ("Hoy") ya lleva al inicio, así que no se pierde ningún camino.
 - La página activa se marca con **`aria-current="page"`** además del color: el
   estado no puede comunicarse solo por color.
 - `<main class="mx-auto w-full max-w-3xl grow px-6 py-10">` con el `<h1>` y el
@@ -1099,6 +1127,11 @@ Nada. Opcional: si quieres otra tipografía distinta a Inter, dímelo ahora.
 
 ### Criterio de aceptación
 - El toggle cambia el tema, sobrevive a un F5 y no produce parpadeo al cargar.
+- La cabecera queda anclada (`header.top === 0`) tras hacer scroll, en móvil y en
+  escritorio, y **no se solapa con `<main>`**.
+- El texto de los items aparece exactamente en `768px` (`md:`) y no antes.
+- De 320 px a 1280 px la cabecera mide siempre **63 px** y `document.body.scrollWidth`
+  nunca supera el viewport (sin scroll lateral).
 - `/app`, `/progreso` y `/ajustes` responden 200 y marcan su enlace de nav con
   `aria-current="page"`.
 - Ninguna utilidad de color resuelve a un hex fijo en el CSS generado (salvo los

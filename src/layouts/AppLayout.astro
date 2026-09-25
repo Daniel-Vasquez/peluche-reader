@@ -2,6 +2,7 @@
 import BaseLayout from '@/layouts/BaseLayout.astro';
 import ThemeToggle from '@/components/ThemeToggle';
 import SignOutButton from '@/components/auth/SignOutButton';
+import NavIcon, { type NavIconName } from '@/components/icons/NavIcon.astro';
 import { firstName } from '@/lib/name';
 
 interface Props {
@@ -18,10 +19,10 @@ const user = Astro.locals.user!;
 const greeting = firstName(user.name);
 const appName = import.meta.env.PUBLIC_APP_NAME ?? 'Peluche Reader';
 
-const NAV = [
-  { href: '/app', label: 'Hoy' },
-  { href: '/progreso', label: 'Progreso' },
-  { href: '/ajustes', label: 'Ajustes' },
+const NAV: { href: string; label: string; icon: NavIconName }[] = [
+  { href: '/app', label: 'Hoy', icon: 'hoy' },
+  { href: '/progreso', label: 'Progreso', icon: 'progreso' },
+  { href: '/ajustes', label: 'Ajustes', icon: 'ajustes' },
 ];
 
 const current = Astro.url.pathname;
@@ -30,29 +31,49 @@ const isActive = (href: string) => current === href || current.startsWith(`${hre
 
 <BaseLayout title={`${title} · ${greeting}`}>
   <div class="flex min-h-dvh flex-col">
-    <header class="border-b border-border bg-surface">
-      <div class="mx-auto flex w-full max-w-3xl items-center gap-4 px-6 py-3">
+    {/*
+      `sticky top-0` en lugar de `fixed`: el elemento sigue ocupando su sitio en
+      el flujo, así que el contenido no queda tapado y no hay que compensar con
+      `padding-top` en el padre. `z-50` lo mantiene sobre las tarjetas.
+      El fondo es opaco (`bg-surface`), necesario para que el contenido no se
+      transparente al pasar por debajo.
+    */}
+    <header class="sticky top-0 z-50 border-b border-border bg-surface">
+      <div class="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-3 sm:gap-4 sm:px-6">
+        {/*
+          El logotipo desaparece por debajo de `sm`: a 320 px no cabe junto a la
+          navegación y los controles, y partía en dos líneas engordando la
+          cabecera. En móvil el primer item de la navegación ("Hoy") ya lleva al
+          inicio, así que no se pierde ningún camino.
+        */}
         <a
           href="/app"
-          class="text-sm font-semibold tracking-wide text-primary uppercase"
+          class="hidden text-sm font-semibold tracking-wide whitespace-nowrap text-primary uppercase sm:block"
         >
           {appName}
         </a>
 
         <nav aria-label="Navegación principal" class="flex items-center gap-1">
           {
-            NAV.map(({ href, label }) => (
+            NAV.map(({ href, label, icon }) => (
               <a
                 href={href}
                 aria-current={isActive(href) ? 'page' : undefined}
                 class:list={[
-                  'rounded-card px-3 py-1.5 text-sm font-medium transition',
+                  'flex items-center gap-x-2 rounded-card px-2.5 py-1.5 text-sm font-medium transition md:px-3',
                   isActive(href)
                     ? 'bg-primary-soft text-primary'
                     : 'text-text-soft hover:text-text',
                 ]}
               >
-                {label}
+                <NavIcon name={icon} />
+                {/*
+                  `sr-only md:not-sr-only` en vez de `hidden md:inline`: en móvil
+                  el texto sigue en el árbol de accesibilidad, así que el enlace
+                  conserva su nombre y no queda un icono sin etiqueta. No hace
+                  falta `aria-label`, que además duplicaría el nombre en escritorio.
+                */}
+                <span class="sr-only md:not-sr-only">{label}</span>
               </a>
             ))
           }
