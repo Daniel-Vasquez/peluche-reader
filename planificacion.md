@@ -1064,8 +1064,27 @@ const PatchSchema = z.object({
   y **la envía en cada guardado**, no solo en el primero: si el usuario viaja o
   cambia el reloj del sistema, la contabilidad de días debe seguirle. Si difiere
   de la guardada, lo avisa antes de guardar.
-- Guarda con `fetch('/api/profile', { method: 'PATCH', ... })`, muestra estado
-  "Guardado ✓" y etiqueta el botón "Empezar a leer" durante el onboarding.
+- Guarda con `fetch('/api/profile', { method: 'PATCH', ... })`. El botón se
+  etiqueta "Empezar a leer" durante el onboarding y "Guardar cambios" después.
+- **Al guardar con éxito navega al inicio de la app (`/app`)**, tanto en el
+  onboarding como en una edición normal: los ajustes no son un destino en sí,
+  son un paso para volver a leer.
+
+  ```ts
+  const HOME_PATH = '/app';
+  // …
+  setStatus('saved');
+  window.location.replace(HOME_PATH);
+  ```
+
+  Dos decisiones ahí:
+  - **`replace`, no `href`**: sustituye la entrada del historial, así que pulsar
+    "atrás" desde el inicio no devuelve al formulario que el usuario ya envió.
+  - **Navegación completa, no `pushState`**: el servidor tiene que volver a
+    renderizar con el perfil y el nombre nuevos.
+
+  El botón queda inhabilitado mientras `status !== 'idle'` (evita doble envío
+  durante la navegación) y muestra "Guardado ✓" con un "Volviendo al inicio…".
 - Accesibilidad de los chips: `aria-pressed` + `aria-label` con el día completo
   ("miércoles"), porque la letra sola (`X`) no se entiende con lector de pantalla.
 
@@ -1135,6 +1154,8 @@ Confirmar tu zona horaria real para `PUBLIC_DEFAULT_TIMEZONE` (asumo
 - 10 `GET /api/profile` en paralelo dejan **un solo** documento en `profiles`.
 - Cambiar el nombre en `/ajustes` actualiza el saludo de `/app` y el título **en
   la primera recarga**, no cinco minutos después.
+- Pulsar "Guardar cambios" (o "Empezar a leer") deja al usuario en `/app`, y
+  "atrás" no vuelve al formulario.
 - Un POST directo a `/api/auth/update-user` con `name: "D"` devuelve 400 y **no**
   corrompe el nombre guardado.
 

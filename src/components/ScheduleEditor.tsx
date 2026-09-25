@@ -24,6 +24,9 @@ const inputClass =
 
 type Status = 'idle' | 'saving' | 'saved';
 
+/** Inicio de la app con sesión. Destino tras guardar. */
+const HOME_PATH = '/app';
+
 export default function ScheduleEditor({
   initialName,
   initialScheduledDays,
@@ -113,8 +116,12 @@ export default function ScheduleEditor({
     }
 
     setStatus('saved');
-    // Recarga para que el saludo, el título y el layout usen el nombre nuevo.
-    if (nameChanged) window.location.reload();
+
+    // Navegación completa (no history.pushState) para que el servidor vuelva a
+    // renderizar con el perfil y el nombre nuevos. Sustituye la entrada en el
+    // historial: pulsar "atrás" desde el inicio no debe devolver al formulario
+    // que el usuario ya envió.
+    window.location.replace(HOME_PATH);
   }
 
   return (
@@ -244,16 +251,18 @@ export default function ScheduleEditor({
       )}
 
       <div className="flex items-center gap-3">
-        <Button type="submit" disabled={status === 'saving'}>
+        <Button type="submit" disabled={status !== 'idle'}>
           {status === 'saving'
             ? 'Guardando…'
-            : onboarding
-              ? 'Empezar a leer'
-              : 'Guardar cambios'}
+            : status === 'saved'
+              ? 'Guardado ✓'
+              : onboarding
+                ? 'Empezar a leer'
+                : 'Guardar cambios'}
         </Button>
         {status === 'saved' && (
-          <p role="status" className="text-sm font-medium text-primary">
-            Guardado ✓
+          <p role="status" className="text-sm text-text-soft">
+            Volviendo al inicio…
           </p>
         )}
       </div>
