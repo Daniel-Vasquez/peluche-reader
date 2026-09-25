@@ -48,6 +48,19 @@
   --color-alert:          #e9437c;
   --color-alert-text:     #c02258;
 
+  /* Rampa SECUENCIAL del mapa de calor: un solo tono, magnitud baja → alta.
+     Validada (monotonía de luminosidad, ΔL ≥ 0.06 entre pasos, extremo claro
+     ≥ 2:1 sobre la superficie, un solo matiz). No la toques a ojo: si cambia,
+     hay que revalidarla. */
+  --color-chart-1:        #21c6b0;
+  --color-chart-2:        #0d9488;
+  --color-chart-3:        #0f766e;
+  --color-chart-4:        #115e59;
+  /* Celda sin lectura: no forma parte de la rampa, es ausencia de dato. */
+  --color-chart-empty:    #eaedf2;
+  /* Rejilla y ejes: un paso por encima de la superficie, recesivos. */
+  --color-chart-grid:     #e6e9ef;
+
   --radius-card: 14px;
 
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
@@ -76,6 +89,15 @@
 
   --color-alert:          #f472a3;
   --color-alert-text:     #fda4c4;
+
+  /* En oscuro la rampa invierte el ancla: más magnitud = más claro. No es un
+     volteo automático del tema claro, son pasos elegidos y validados aparte. */
+  --color-chart-1:        #0d9488;
+  --color-chart-2:        #14b8a6;
+  --color-chart-3:        #2dd4bf;
+  --color-chart-4:        #5eead4;
+  --color-chart-empty:    #1b2436;
+  --color-chart-grid:     #232d44;
 }
 
 /* Le dice al navegador cómo pintar scrollbars y controles nativos. */

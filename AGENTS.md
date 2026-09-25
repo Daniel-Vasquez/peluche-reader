@@ -71,3 +71,21 @@ Cada color de marca tiene **dos** tokens, y confundirlos rompe WCAG AA:
   (en tema oscuro el relleno es claro y el blanco daría 2.49:1).
 - **Hover de relleno** → `hover:bg-primary-hover`, que oscurece en tema claro y
   aclara en oscuro.
+
+### Gráficas
+
+Los colores se leen de los tokens con `useChartTheme()` (`src/lib/chart-theme.ts`),
+nunca hexadecimales en el componente. Reglas que no se negocian:
+
+- **Elige la forma antes que el color.** Una razón contra un límite es un medidor,
+  no un anillo; cuatro cifras de cabecera son stat tiles, no una gráfica.
+- **Una sola serie ⇒ sin caja de leyenda**; el título ya dice qué se pinta.
+- **Nunca colorees barras según su valor** cuando las categorías no tienen orden:
+  gasta el canal de identidad re-codificando lo que la altura ya dice.
+- La rampa secuencial (`--color-chart-1..4`) está **validada** (monotonía de
+  luminosidad, ΔL ≥ 0.06, extremo claro ≥ 2:1, un solo matiz) en los dos temas. Si
+  cambias un paso, hay que revalidarla.
+- **El color nunca es el único canal**: el estado lleva símbolo y etiqueta, y toda
+  gráfica tiene su tabla equivalente.
+- Rejilla horizontal hairline **sólida**, ejes sin línea, barras ≤ 24 px con extremo
+  redondeado de 4 px, línea de 2 px, relleno de área en lavado.

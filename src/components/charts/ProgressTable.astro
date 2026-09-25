@@ -1,0 +1,62 @@
+---
+import type { DayPoint } from '@/lib/progress-summary';
+import type { DayOutcome } from '@/lib/db/types';
+
+interface Props {
+  daily: DayPoint[];
+}
+
+const { daily } = Astro.props;
+
+const OUTCOME_LABEL: Record<DayOutcome, string> = {
+  completed: 'Cumplido',
+  missed: 'Programado sin leer',
+  rest: 'Día libre',
+  pending: 'En curso',
+};
+
+// Más reciente primero: es el orden en que se busca un dato concreto.
+const rows = [...daily].reverse();
+---
+
+{/*
+  Vista de tabla. No es un extra: las gráficas nunca pueden ser el único camino
+  al dato. Aquí vive todo lo que el color y la altura codifican, en texto.
+*/}
+<details class="mt-4 rounded-card border border-border bg-surface">
+  <summary
+    class="cursor-pointer px-5 py-3 text-sm font-medium text-text-soft transition hover:text-primary"
+  >
+    Ver los datos en una tabla
+  </summary>
+
+  <div class="max-h-96 overflow-auto border-t border-border">
+    <table class="w-full text-sm">
+      <caption class="sr-only">
+        Minutos leídos, perritos ganados y resultado de cada día
+      </caption>
+      <thead class="sticky top-0 bg-surface text-left text-text-soft">
+        <tr class="border-b border-border">
+          <th scope="col" class="px-5 py-2 font-medium">Día</th>
+          <th scope="col" class="px-5 py-2 text-right font-medium">Minutos</th>
+          <th scope="col" class="px-5 py-2 text-right font-medium">Perritos</th>
+          <th scope="col" class="px-5 py-2 font-medium">Resultado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {
+          rows.map((day) => (
+            <tr class="border-b border-border last:border-0">
+              <th scope="row" class="px-5 py-2 text-left font-normal tabular-nums">
+                {day.dayKey}
+              </th>
+              <td class="px-5 py-2 text-right tabular-nums">{day.minutes}</td>
+              <td class="px-5 py-2 text-right tabular-nums">{day.dogsAwarded}</td>
+              <td class="px-5 py-2 text-text-soft">{OUTCOME_LABEL[day.outcome]}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+</details>

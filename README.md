@@ -51,5 +51,5 @@ npm run dev              # http://localhost:4321
 - [x] **Tanda 5** · Cronómetro de sesión (tiempo autoritativo en el servidor)
 - [x] **Tanda 6** · Motor de gamificación (lógica pura + 42 tests)
 - [x] **Tanda 7** · Integración: las sesiones mueven perritos, refugio visual
-- [ ] Tanda 8 · Dashboard de progreso
+- [x] **Tanda 8** · Dashboard de progreso (Recharts, rampa validada)
 - [ ] Tanda 9 · Semilla, pulido y despliegue

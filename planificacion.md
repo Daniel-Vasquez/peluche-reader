@@ -217,6 +217,8 @@ reading-app/
     │   ├── env.ts                # lector de variables (process.env + import.meta.env)
     │   ├── name.ts               # reglas del nombre (cliente + servidor)
     │   ├── sessions-view.ts      # forma de la sesión que viaja al navegador
+    │   ├── chart-theme.ts        # lee los tokens de gráfica en runtime
+    │   ├── progress-summary.ts   # tipos del dashboard
     │   ├── shelter-events.ts     # puente por evento DOM entre cronómetro y refugio
     │   ├── time.ts               # dayKey / weekKey / ISO weekday
     │   ├── db/
@@ -290,7 +292,7 @@ es el estado final.
 | `clsx` | 2.1.1 | 3 | composición de clases |
 | `lucide-react` | 1.48.0 | 3 | iconos |
 | `vitest` | 5.0.1 | 6 | tests del motor de gamificación |
-| `recharts` | — | 8 | gráficas |
+| `recharts` | 3.10.1 | 8 | gráficas |
 
 **`@astrojs/check` no se instala**: no soporta TypeScript 7. Los `.ts`/`.tsx` los
 valida `npm run typecheck` y los `.astro`, `astro build`.
@@ -2132,25 +2134,88 @@ no tengan huecos.
 
 ### 8.2 Componentes `src/components/charts/`
 
-| Componente | Tipo | Datos | Color |
-|---|---|---|---|
-| `MinutesBarChart` | `BarChart` | minutos/día, 14 días | barra `--color-accent`; día programado incumplido en `--color-alert`; día libre en `--color-muted` |
-| `DogsAreaChart` | `AreaChart` | `dogsTimeline`, 30 días | línea + relleno al 15 % en `--color-primary` |
-| `AdherenceRing` | `RadialBarChart` | % adherencia semanal | `--color-primary` sobre pista `--color-muted` |
-| `WeekHeatmap` | grid propio (sin Recharts) | 8 semanas × 7 días | escala de teal por minutos; ✕ rosa en incumplidos |
-| `EventTimeline` | lista | `events` | `+` teal / `−` rosa |
+**La forma se elige antes que el color, y a veces la respuesta no es una gráfica.**
+
+| Componente | Forma | Por qué esa |
+|---|---|---|
+| Fila de `Stat` | 4 stat tiles | cuatro cifras de cabecera; una gráfica de barras agrupadas sería peor |
+| `AdherenceMeter` | **medidor**, no anillo | es *una razón contra un límite*; un donut de dos porciones es más tinta para el mismo dato |
+| `MinutesBarChart` | `BarChart`, **una sola serie** | magnitud en el tiempo |
+| `DogsAreaChart` | `AreaChart`, una sola serie | tendencia en el tiempo |
+| `WeekHeatmap` | rejilla CSS propia | magnitud en cuadrícula; no necesita ejes, así que no necesita Recharts |
+| `EventTimeline` | lista (Astro) | no es una gráfica |
+| `ProgressTable` | tabla en `<details>` (Astro) | **obligatoria**: las gráficas nunca pueden ser el único camino al dato |
+
+**Una sola serie ⇒ sin caja de leyenda.** El título ya dice qué se pinta; una caja
+con un único cuadrito repite el título y gasta espacio.
+
+#### La rampa secuencial está validada, no elegida a ojo
+
+El mapa de calor es el único sitio donde **el color ES el dato**, así que necesita
+una rampa secuencial de verdad: un solo tono, monotonía de luminosidad, ΔL ≥ 0.06
+entre pasos y el extremo claro ≥ 2:1 sobre la superficie.
+
+| Token | Claro | Oscuro |
+|---|---|---|
+| `--color-chart-1` (1–9 min) | `#21c6b0` | `#0d9488` |
+| `--color-chart-2` (10–19 min) | `#0d9488` | `#14b8a6` |
+| `--color-chart-3` (20–29 min) | `#0f766e` | `#2dd4bf` |
+| `--color-chart-4` (30+ min) | `#115e59` | `#5eead4` |
+
+**En oscuro la rampa invierte el ancla** (más magnitud = más claro). No es un volteo
+automático del tema claro: son pasos elegidos y validados por separado.
+
+> El primer candidato empezaba en `#ccfbf1`, que da **1.10:1** sobre blanco —muy por
+> debajo del piso de 2:1— y varios pasos quedaban a ΔL 0.04, indistinguibles. La
+> rampa se ajustó hasta que las cuatro comprobaciones pasaron. **Si cambias un paso,
+> hay que revalidar.**
+
+#### Uso del color, por trabajo
+
+- **Barras y línea**: un único tono (`--color-primary-bright`) para todas. Colorear
+  cada barra según su valor gastaría el canal de identidad en re-codificar lo que la
+  altura ya dice.
+- **Mapa de calor**: la rampa secuencial de arriba.
+- **Día programado sin leer**: color de **estado**, y nunca solo color — lleva un
+  símbolo `✕`, entrada en la leyenda y el dato en el `aria-label`.
+  El ✕ usa `--color-alert-text`, no `--color-alert`: sobre la celda vacía el tono de
+  marca daba 3.22:1 y es un símbolo pequeño; el de texto da 4.96:1.
+- **El texto nunca lleva el color del dato.** Valores, etiquetas y ejes usan tokens
+  de texto; la identidad la aporta la marca de color que va al lado.
+
+#### Especificaciones de marca
+
+- Barras: `maxBarSize={24}`, `radius={[4, 4, 0, 0]}` (extremo redondeado, base
+  cuadrada).
+- Línea: 2 px, `strokeLinejoin`/`Linecap` redondeados; relleno del área en degradado
+  del 16 % al 2 % — un lavado, nunca un bloque saturado.
+- Punto activo: `r=4` con **anillo de 2 px del color de la superficie**.
+- Rejilla: solo horizontal, **hairline sólida** (nunca discontinua), en
+  `--color-chart-grid`. Ejes sin línea ni marcas.
+- Celdas del mapa: anillo de 2 px de la superficie como separador. **Nunca un borde
+  dibujado alrededor de la marca.**
+- `Stat` usa **figuras proporcionales**, no `tabular-nums`: las tabulares dan a cada
+  dígito el ancho de un `0` y a 24 px un número como «121» se ve suelto. Las
+  tabulares se reservan para columnas que se alinean (tablas, ejes).
 
 **Reglas de las gráficas:**
-- Los colores salen de las **variables CSS**, leídas en runtime
-  (`getComputedStyle(document.documentElement).getPropertyValue('--color-accent')`)
-  dentro de un `useEffect` que re-lee al cambiar de tema; así las gráficas
-  cambian con el toggle sin duplicar paletas.
+- Los colores salen de las **variables CSS**, leídas en runtime por
+  `useChartTheme()` (`src/lib/chart-theme.ts`), que además observa la clase de
+  `<html>` con un `MutationObserver` para releerlas al cambiar de tema. Recharts
+  necesita valores concretos, no `var(--…)`, así que hay que resolverlos; leerlos
+  del sistema de diseño es lo que evita duplicar hexadecimales en el código.
 - `<ResponsiveContainer width="100%" height={220}>` siempre; nada de anchos fijos.
 - Sin `CartesianGrid` vertical; horizontal a 1 px en `--color-border`.
 - Ejes sin línea (`axisLine={false} tickLine={false}`), tipografía 12 px
   `--color-text-soft`.
-- Tooltip propio (`content={<ChartTooltip />}`) con `bg-surface`, borde y radio de
-  tarjeta — el de Recharts por defecto ignora el tema oscuro.
+- Tooltip propio (`content={<ChartTooltip />}`): el de Recharts ignora los tokens
+  y se vería blanco sobre fondo oscuro. **Jerarquía invertida respecto a la
+  leyenda**: manda el valor y la etiqueta es secundaria, porque el lector ya sabe
+  qué serie mira y lo que quiere es el número. Las series se marcan con una
+  **clave de línea**, no una caja: a esa densidad un bloque relleno es tinta con
+  peso de dato haciendo el trabajo de una etiqueta.
+- **El tooltip nunca es el único camino al valor**: la tabla lo cubre todo, y en el
+  mapa de calor el foco de teclado muestra lo mismo que el hover.
 - Todas las gráficas se montan con `client:visible` (no `client:load`): Recharts
   pesa y no hace falta antes del scroll.
 - Estado vacío explícito: usuario sin datos ve una tarjeta con
@@ -2169,7 +2234,14 @@ Orden de lectura: **estado ahora → semana → historia**.
 Tener al menos ~5 días de datos. Si no, ejecuta `npm run db:seed` (Tanda 9).
 
 ### Criterio de aceptación
-Cambiar de tema con el toggle re-colorea las gráficas sin recargar la página.
+- Cambiar de tema con el toggle re-colorea las gráficas sin recargar la página, y
+  la rampa del mapa de calor **invierte su ancla** en oscuro.
+- La rampa pasa las cuatro comprobaciones ordinales en **los dos modos**.
+- Un día programado con lectura **por debajo del umbral** pinta su barra en el color
+  de estado (verificado: conviven `#0d9488` y `#e9437c` en la misma gráfica).
+- El foco de teclado en una celda del mapa anuncia lo mismo que el hover.
+- La tabla tiene `caption`, cabeceras con `scope` y una fila por día del rango.
+- Ningún error de consola con las cuatro gráficas hidratadas.
 
 ---
 

@@ -1,0 +1,45 @@
+---
+import type { TimelineEntry } from '@/lib/progress-summary';
+
+interface Props {
+  events: TimelineEntry[];
+}
+
+const { events } = Astro.props;
+
+// El signo y el icono van además del color: el estado nunca se comunica solo
+// con color.
+const MARK: Record<TimelineEntry['type'], { icon: string; tone: string }> = {
+  reward: { icon: '+', tone: 'text-primary' },
+  adoption: { icon: '★', tone: 'text-accent-text' },
+  penalty: { icon: '−', tone: 'text-alert-text' },
+  week_rollover: { icon: '·', tone: 'text-text-soft' },
+};
+---
+
+{
+  events.length === 0 ? (
+    <p class="text-text-soft">Todavía no hay movimientos en tu refugio.</p>
+  ) : (
+    <ol class="space-y-2">
+      {events.map((event) => {
+        const mark = MARK[event.type];
+        return (
+          <li class="flex items-baseline gap-3 text-sm">
+            <span class:list={['w-4 shrink-0 text-center font-semibold', mark.tone]}>
+              {mark.icon}
+            </span>
+            <span class="w-16 shrink-0 text-text-soft tabular-nums">{event.label}</span>
+            <span class="grow text-text">{event.reason}</span>
+            <span class:list={['shrink-0 font-medium tabular-nums', mark.tone]}>
+              {event.delta === 0 ? '—' : `${event.delta > 0 ? '+' : ''}${event.delta}`}
+            </span>
+            <span class="w-10 shrink-0 text-right text-text-soft tabular-nums">
+              {event.dogsAfter} 🐶
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  )
+}

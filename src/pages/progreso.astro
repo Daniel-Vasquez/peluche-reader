@@ -1,24 +1,112 @@
 ---
 import AppLayout from '@/layouts/AppLayout.astro';
 import Card from '@/components/ui/Card.astro';
+import Stat from '@/components/ui/Stat.astro';
+import AdherenceMeter from '@/components/charts/AdherenceMeter';
+import DogsAreaChart from '@/components/charts/DogsAreaChart';
+import EventTimeline from '@/components/charts/EventTimeline.astro';
+import MinutesBarChart from '@/components/charts/MinutesBarChart';
+import ProgressTable from '@/components/charts/ProgressTable.astro';
+import WeekHeatmap from '@/components/charts/WeekHeatmap';
 import { syncOnVisit } from '@/lib/game/service';
+import { ensureProfile } from '@/lib/repos/profile';
+import { buildProgressSummary } from '@/lib/repos/summary';
+import { firstName } from '@/lib/name';
 
 export const prerender = false;
 
-// Reconcilia los días cerrados también aquí: el usuario puede entrar directo
-// a /progreso sin pasar por /app, y vería cifras sin las penalizaciones al día.
-const snapshot = await syncOnVisit(Astro.locals.user!.id);
+const user = Astro.locals.user!;
+const profile = await ensureProfile(user.id);
+
+// Reconcilia los días cerrados también aquí: el usuario puede entrar directo a
+// /progreso sin pasar por /app, y vería cifras sin las penalizaciones al día.
+await syncOnVisit(user.id);
+const summary = await buildProgressSummary(user.id, 30);
+
+const { totals, shelter } = summary;
+const last14 = summary.daily.slice(-14);
+const greeting = firstName(user.name);
 ---
 
 <AppLayout
   title="Progreso"
   subheading="Días leídos, tiempo acumulado y el estado de tu refugio."
 >
-  <Card>
-    <p class="text-text-soft">
-      Las gráficas llegan en la Tanda 8. Por ahora, tu refugio tiene
-      <span class="font-medium text-text">{snapshot.shelter.dogs}</span> perritos y
-      <span class="font-medium text-text">{snapshot.shelter.adopted}</span> adoptados.
-    </p>
-  </Card>
+  {
+    summary.empty ? (
+      <Card>
+        <p class="text-text-soft">
+          Todavía no hay nada que medir, {greeting}. Empieza tu primera sesión en{' '}
+          <a class="font-medium text-primary hover:underline" href="/app">
+            Hoy
+          </a>{' '}
+          y este panel se llena solo.
+        </p>
+      </Card>
+    ) : (
+      <>
+        {/* 1. Estado ahora */}
+        <dl class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Stat
+            label="Perritos"
+            value={`${shelter.dogs} de ${shelter.capacity}`}
+            hint={`${shelter.adopted} adoptados`}
+            tone="primary"
+          />
+          <Stat
+            label="Racha"
+            value={shelter.streak}
+            hint={`récord de ${shelter.bestStreak}`}
+            tone="accent"
+          />
+          <Stat
+            label="Esta semana"
+            value={`${totals.minutesThisWeek} min`}
+            hint={`${totals.minutesAllTime} min en total`}
+          />
+          <Stat
+            label="Margen semanal"
+            value={shelter.weeklyLossCap - shelter.weekLosses}
+            hint={`de ${shelter.weeklyLossCap} ${shelter.weeklyLossCap === 1 ? 'perrito' : 'perritos'}`}
+            tone={shelter.weekLosses >= shelter.weeklyLossCap ? 'alert' : 'neutral'}
+          />
+        </dl>
+
+        {/* 2. La semana */}
+        <Card title="Adherencia a tu compromiso" class="mt-4">
+          <AdherenceMeter
+            client:visible
+            adherence={totals.adherence}
+            completed={totals.completedScheduled}
+            total={totals.scheduledClosed}
+          />
+        </Card>
+
+        {/* 3. La historia reciente */}
+        <Card title="Minutos por día" class="mt-4">
+          <p class="mb-3 text-sm text-text-soft">Últimos 14 días.</p>
+          <MinutesBarChart
+            client:visible
+            data={last14}
+            goalMinutes={profile.dailyGoalMinutes}
+          />
+        </Card>
+
+        <Card title="Perritos en el refugio" class="mt-4">
+          <p class="mb-3 text-sm text-text-soft">Últimos 30 días.</p>
+          <DogsAreaChart client:visible data={summary.dogsTimeline} capacity={shelter.capacity} />
+        </Card>
+
+        <Card title="Ocho semanas de lectura" class="mt-4">
+          <WeekHeatmap client:visible weeks={summary.weeks} />
+        </Card>
+
+        <Card title="Movimientos recientes" class="mt-4">
+          <EventTimeline events={summary.events} />
+        </Card>
+
+        <ProgressTable daily={summary.daily} />
+      </>
+    )
+  }
 </AppLayout>

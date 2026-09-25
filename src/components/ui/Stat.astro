@@ -23,8 +23,13 @@ const TONES: Record<Tone, string> = {
 };
 ---
 
+{/*
+  La cifra usa figuras PROPORCIONALES, no `tabular-nums`: las tabulares dan a
+  cada dígito el ancho de un `0`, y a 24 px un número como «121» se ve suelto.
+  Las tabulares se reservan para columnas que deben alinearse (tablas, ejes).
+*/}
 <div class="rounded-card border border-border bg-surface p-5">
   <dt class="text-sm text-text-soft">{label}</dt>
-  <dd class:list={['mt-1 text-2xl font-semibold tabular-nums', TONES[tone]]}>{value}</dd>
+  <dd class:list={['mt-1 text-2xl font-semibold', TONES[tone]]}>{value}</dd>
   {hint && <p class="mt-1 text-sm text-text-soft">{hint}</p>}
 </div>
