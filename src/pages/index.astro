@@ -3,7 +3,7 @@ import BaseLayout from '@/layouts/BaseLayout.astro';
 import ThemeToggle from '@/components/ThemeToggle';
 import SignOutButton from '@/components/auth/SignOutButton';
 import { firstName } from '@/lib/name';
-import { GAME_PREVIEW } from '@/lib/game/preview';
+import { GAME } from '@/lib/game/config';
 
 /*
  * Renderizado en servidor, no prerenderizada: la landing tiene que saber si ya
@@ -81,19 +81,19 @@ const user = Astro.locals.user;
         <div class="rounded-card border border-border bg-surface p-5">
           <dt class="text-sm text-text-soft">Umbral mínimo</dt>
           <dd class="mt-1 text-2xl font-semibold text-primary-bright">
-            {GAME_PREVIEW.baseMinutes} min
+            {GAME.BASE_MINUTES} min
           </dd>
         </div>
         <div class="rounded-card border border-border bg-surface p-5">
           <dt class="text-sm text-text-soft">Refugio inicial</dt>
           <dd class="mt-1 text-2xl font-semibold text-accent">
-            {GAME_PREVIEW.startDogs} perritos
+            {GAME.START_DOGS} perritos
           </dd>
         </div>
         <div class="rounded-card border border-border bg-surface p-5">
           <dt class="text-sm text-text-soft">Día programado sin leer</dt>
           <dd class="mt-1 text-2xl font-semibold text-alert">
-            −{GAME_PREVIEW.penaltyPerMiss} perrito
+            −{GAME.PENALTY_PER_MISS} perrito
           </dd>
         </div>
       </dl>

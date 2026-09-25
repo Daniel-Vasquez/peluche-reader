@@ -31,6 +31,7 @@ npm run dev              # http://localhost:4321
 | `npm run dev` | Servidor de desarrollo |
 | `npm run build` | Build de producción (salida en `.vercel/output`) |
 | `npm run typecheck` | `tsc --noEmit` sobre todo el proyecto |
+| `npm test` | Vitest: 42 tests del motor de gamificación |
 | `npm run preview` | **No funciona** con el adaptador de Vercel; usa `vercel dev` |
 | `npm run db:init` | Crea los índices de MongoDB |
 | `npm run db:reset` | Limpia las colecciones (requiere `ALLOW_DB_RESET=yes`) |
@@ -44,7 +45,7 @@ npm run dev              # http://localhost:4321
 - [x] **Tanda 3** · Shell de la app, tema claro/oscuro y primitivas de UI
 - [x] **Tanda 4** · Perfil, días comprometidos y edición del nombre
 - [x] **Tanda 5** · Cronómetro de sesión (tiempo autoritativo en el servidor)
-- [ ] Tanda 6 · Motor de gamificación
+- [x] **Tanda 6** · Motor de gamificación (lógica pura + 42 tests)
 - [ ] Tanda 7 · Integración
 - [ ] Tanda 8 · Dashboard de progreso
 - [ ] Tanda 9 · Semilla, pulido y despliegue

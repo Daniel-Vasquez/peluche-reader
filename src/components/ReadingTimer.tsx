@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import Button from '@/components/ui/Button';
-import { REWARD_STEPS } from '@/lib/game/preview';
+import { REWARD_STEPS } from '@/lib/game/rewards';
 import type { SessionView } from '@/lib/sessions-view';
 import { formatDuration } from '@/lib/time';
 

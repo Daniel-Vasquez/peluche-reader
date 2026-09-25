@@ -156,6 +156,7 @@ reading-app/
 ├── .env.example
 ├── astro.config.mjs
 ├── tsconfig.json
+├── vitest.config.ts              # alias @/* para los tests
 ├── package.json
 ├── planificacion.md              # este documento
 ├── README.md                     # puesta en marcha + estado de las tandas
@@ -183,12 +184,12 @@ reading-app/
     │   │   ├── collections.ts    # accesores tipados
     │   │   └── types.ts          # tipos de documento
     │   ├── game/
-    │   │   ├── preview.ts        # PROVISIONAL: cifras para la UI, se borra en la Tanda 6
-    │   │   ├── config.ts         # constantes de balance
+    │   │   ├── config.ts         # constantes de balance (ÚNICA fuente de verdad)
     │   │   ├── rewards.ts        # curva de recompensa (puro)
     │   │   ├── penalties.ts      # penalización + tope semanal (puro)
-    │   │   ├── engine.ts         # reducer de estado (puro)
-    │   │   └── service.ts        # orquesta engine + MongoDB (impuro)
+    │   │   ├── engine.ts         # reducer + reconcile (puro)
+    │   │   ├── service.ts        # orquesta engine + MongoDB (impuro)
+    │   │   └── __tests__/        # rewards · penalties · engine · invariants
     │   └── repos/
     │       ├── profile.ts
     │       ├── sessions.ts
@@ -248,7 +249,7 @@ es el estado final.
 | `@better-auth/mongo-adapter` | 1.7.6 | 2 | **hay que instalarlo aparte** (ver Tanda 2) |
 | `clsx` | 2.1.1 | 3 | composición de clases |
 | `lucide-react` | 1.48.0 | 3 | iconos |
-| `vitest` | — | 6 | tests del motor de gamificación |
+| `vitest` | 5.0.1 | 6 | tests del motor de gamificación |
 | `recharts` | — | 8 | gráficas |
 
 **`@astrojs/check` no se instala**: no soporta TypeScript 7. Los `.ts`/`.tsx` los
@@ -1425,7 +1426,21 @@ producto: si se equivoca, todo lo demás miente.
 ```bash
 npm install -D vitest
 ```
-`package.json`: `"test": "vitest run"`.
+
+Scripts: `"test": "vitest run"` y `"test:watch": "vitest"`.
+
+**Hace falta `vitest.config.ts`** para que los tests resuelvan el alias `@/*`:
+Vitest no lee los `paths` de `tsconfig.json` por su cuenta.
+
+```ts
+import { defineConfig } from 'vitest/config';
+import { fileURLToPath } from 'node:url';
+
+export default defineConfig({
+  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
+  test: { include: ['src/**/*.test.ts'], environment: 'node' },
+});
+```
 
 ### 6.1 Constantes de balance — `src/lib/game/config.ts`
 
@@ -1478,13 +1493,32 @@ export function dogsForMinutes(minutes: number): number {
   return 1 + (blocks * (blocks + 1)) / 2;   // 1, 2, 4, 7, 11
 }
 
-/** Minutos que faltan para el siguiente escalón (null si ya está en el tope). */
-export function nextRewardStep(minutes: number): { atMinutes: number; dogs: number } | null {
-  const steps = [10, 15, 20, 25, 30];
-  const next = steps.find((s) => minutes < s);
-  return next ? { atMinutes: next, dogs: dogsForMinutes(next) } : null;
+/**
+ * Los escalones de la curva, DERIVADOS de `dogsForMinutes`, no escritos a mano:
+ * cambiar `config.ts` cambia la tabla de la interfaz sin tocar la UI.
+ */
+export const REWARD_STEPS: readonly { minutes: number; dogs: number }[] =
+  Array.from({ length: GAME.MAX_BLOCKS + 1 }, (_, i) => {
+    const minutes = GAME.BASE_MINUTES + i * GAME.BLOCK_MINUTES;
+    return { minutes, dogs: dogsForMinutes(minutes) };
+  });
+
+/** Siguiente escalón por alcanzar, o `null` si ya está en el tope. */
+export function nextRewardStep(
+  minutes: number,
+): { atMinutes: number; dogs: number; minutesAway: number } | null {
+  const step = REWARD_STEPS.find((s) => minutes < s.minutes);
+  if (!step) return null;
+  return { atMinutes: step.minutes, dogs: step.dogs, minutesAway: step.minutes - minutes };
 }
 ```
+
+`dogsForMinutes` se blinda contra entradas basura (`NaN`, `Infinity`, negativos →
+`0`), porque los minutos llegan de una división de segundos del cliente.
+
+**Al terminar esta tanda se borra `src/lib/game/preview.ts`** y sus tres usos
+pasan a las constantes reales: `ReadingTimer` importa `REWARD_STEPS` de
+`game/rewards`, y la landing importa `GAME` de `game/config`.
 
 **Tabla resultante (memorizar, es el contrato con la UI):**
 
@@ -1641,17 +1675,16 @@ import { dayKeysBetween, weekKeyFromDayKey } from '@/lib/time';
 /**
  * Evalúa todos los días cerrados entre `state.lastReconciledDay` (exclusivo)
  * y `todayKey` (EXCLUSIVO: el día en curso nunca se penaliza).
- * @param scheduledDays  ISO 1..7 comprometidos.
- * @param completedDays  Set de dayKeys con lectura suficiente (dogsAwarded > 0).
- * @param weekdayOf      dayKey -> ISO weekday.
+ *
+ * No recibe `weekdayOf`: usa `isoWeekdayOfDayKey()` de `@/lib/time`, que no
+ * necesita zona horaria porque un `dayKey` ya es una fecha civil.
  */
 export function reconcile(
   state: GameState,
   todayKey: string,
-  scheduledDays: number[],
-  completedDays: Set<string>,
-  weekdayOf: (dayKey: string) => number,
-): { state: GameState; events: NewEvent[] } {
+  scheduledDays: readonly IsoWeekday[],
+  completedDays: ReadonlySet<string>,
+): ApplyResult {
   let s = state;
   const all: NewEvent[] = [];
   let streakAlive = true;
@@ -1683,36 +1716,75 @@ export function reconcile(
 }
 ```
 
-**Invariantes que deben cumplirse siempre** (afírmalos en los tests):
-- `GAME.FLOOR_DOGS <= dogs <= capacity`
-- `weekLosses <= weeklyLossCap(weekStartDogs)`
-- `reconcile(reconcile(s, T, …).state, T, …)` no produce eventos nuevos.
-- `lastReconciledDay < todayKey` siempre tras reconciliar.
+**Invariantes que deben cumplirse siempre**, comprobados tras cada acción en
+`invariants.test.ts`:
+
+```
+GAME.FLOOR_DOGS <= dogs <= capacity <= GAME.MAX_CAPACITY
+capacity === capacityFor(adopted)          // el aforo nunca se desincroniza
+weekLosses <= weeklyLossCap(weekStartDogs)
+adopted >= 0 · streak >= 0 · bestStreak >= streak
+dogs y adopted son enteros
+evento.dogsAfter === estado.dogs           // el historial no miente
+lastReconciledDay < todayKey               // tras reconciliar
+reconcile(reconcile(s, T, …).state, T, …)   // no produce eventos nuevos
+```
 
 ### 6.6 Tests obligatorios — `src/lib/game/__tests__/`
 
-`rewards.test.ts`
-- `dogsForMinutes`: 0→0, 9→0, 10→1, 14→1, 15→2, 20→4, 25→7, 30→11, 90→11.
-- Monotonía: `dogsForMinutes(n) <= dogsForMinutes(n+1)` para n en 0..120.
+**42 tests en 4 archivos.** Los tres primeros cubren el contrato; el cuarto es el
+que de verdad da garantías.
 
-`penalties.test.ts`
-- Semana desastrosa: 7 de 7 días fallados desde 7 perritos ⇒ termina en **2**
-  (5 pérdidas, tope semanal), nunca en 0.
-- Desde `dogs = 1`, un `miss` no baja de 1.
+`rewards.test.ts` (12)
+- La tabla completa: 0→0, 9→0, 10→1, 14→1, 15→2, 20→4, 25→7, 30→11, 600→11.
+- Monotonía en 0..240 y **curva ascendente**: las ganancias por bloque son
+  `[1, 1, 2, 3, 4]`, estrictamente crecientes desde el segundo.
+- Entradas basura (`-5`, `NaN`, `Infinity`) → `0`. Salida siempre entera.
+- `REWARD_STEPS` coincide con la curva (prueba de que no está escrita a mano).
 
-`engine.test.ts`
-- Doble `settle` con los mismos minutos no duplica recompensa.
-- Desborde: con `dogs = 7, capacity = 7`, leer 30 min ⇒ `dogs = 7`, `adopted = 11`,
-  `capacity = 8`.
-- **Escenario narrativo completo** (ver Apéndice B) reproducido paso a paso.
+`penalties.test.ts` (9)
+- `weeklyLossCap(7) = 5`, y nunca 0 ni con `dogsAtWeekStart = 0`.
+- **Semana desastrosa**: 7 de 7 fallados desde 7 perritos da
+  `[1,1,1,1,1,0,0]` ⇒ termina en **2**, nunca en 0.
+- Empezando con 1, 2, 3, 7, 12 o 21 perritos y fallando **30 días**, nunca baja
+  del piso.
+
+`engine.test.ts` (19)
+- **Pureza**: `applyAction` no muta el estado recibido (comparado con
+  `structuredClone`).
+- Doble `settle` con los mismos minutos no duplica recompensa; seguir leyendo
+  paga **solo la diferencia** (10 min → +1, luego 20 min → +3, no +4).
+- Desborde: con `dogs = 7, capacity = 7`, 30 min ⇒ `dogs = 7`, `adopted = 11`,
+  `capacity = 8`. Y `dogs + adopted` crece exactamente lo ganado: leer mucho
+  nunca se desperdicia.
+- `reconcile` **no juzga el día en curso**, es **idempotente**, no penaliza días
+  libres, cuenta la racha conservando el récord, cruza el cambio de semana y
+  aguanta un mes entero sin entrar.
+- **Escenario narrativo del Apéndice B** reproducido paso a paso.
+
+`invariants.test.ts` (2) — **prueba de fuzz**
+- **2000 secuencias de 40 acciones aleatorias** (`rollover` / `miss` / `rest` /
+  `settle` con 15 duraciones distintas), verificando los invariantes tras cada
+  paso y que todo evento registre el saldo correcto en `dogsAfter`.
+- **300 reconciliaciones** con huecos de 1 a 120 días, 6 horarios distintos
+  (solo lunes, solo domingo, L–V, fines de semana, todos los días, M+V) y días
+  leídos al azar; comprobando invariantes, que `lastReconciledDay < hoy` y la
+  idempotencia.
+- Generador determinista (mulberry32 con semilla) para que un fallo sea
+  reproducible, y mensajes de error que imprimen semilla, paso y estado.
 
 ### Qué necesito de tu lado
 Validar el balance antes de seguir. Si te parece duro o blando, los únicos
 números que hay que tocar son los de `config.ts` — nada más cambia.
 
 ### Criterio de aceptación
-`npm test` en verde. Cero imports de `mongodb` dentro de `src/lib/game/*`
-excepto en `service.ts` (Tanda 7).
+- `npm test` en verde: **42 tests, 4 archivos**.
+- Cero imports de `mongodb` dentro de `src/lib/game/*` excepto en `service.ts`
+  (Tanda 7). Compruébalo con
+  `grep -rn "mongodb" src/lib/game/ | grep -v service`.
+- `src/lib/game/preview.ts` **ya no existe** y nada lo referencia.
+- La interfaz muestra las cifras del motor: la landing lee `GAME` y el cronómetro
+  pinta `REWARD_STEPS` (`10→1, 15→2, 20→4, 25→7, 30→11`), verificado en navegador.
 
 ---
 
