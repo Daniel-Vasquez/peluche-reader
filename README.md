@@ -30,17 +30,16 @@ npm run dev              # http://localhost:4321
 |---|---|
 | `npm run dev` | Servidor de desarrollo |
 | `npm run build` | Build de producción (salida en `.vercel/output`) |
+| `npm run typecheck` | `tsc --noEmit` sobre todo el proyecto |
 | `npm run preview` | Previsualiza el build |
 | `npm run db:init` | Crea los índices de MongoDB |
 | `npm run db:reset` | Limpia las colecciones (requiere `ALLOW_DB_RESET=yes`) |
 | `npm run db:seed` | Genera datos de demostración |
 
-> Los scripts `db:*` llegan en la Tanda 1 de la planificación.
-
 ## Estado
 
 - [x] **Tanda 0** · Scaffolding, adaptador de Vercel y sistema de diseño
-- [ ] Tanda 1 · Capa de datos (MongoDB)
+- [x] **Tanda 1** · Capa de datos (MongoDB): conexión, tipos, índices y scripts
 - [ ] Tanda 2 · Autenticación
 - [ ] Tanda 3 · Shell de la app y tema claro/oscuro
 - [ ] Tanda 4 · Días comprometidos

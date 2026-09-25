@@ -49,7 +49,11 @@ entorno serverless (donde las conexiones son el recurso escaso). Por eso:
    reintentar; el servidor no puede duplicar recompensas.
 8. **El servidor manda**: el cronómetro del navegador es solo UI. Los perritos se
    calculan **exclusivamente** en endpoints del servidor.
-9. Nada de `any`. `strict: true` en TypeScript.
+9. Nada de `any`. `strict: true` en TypeScript. Verifica con `npm run typecheck`
+   (`tsc --noEmit`). **`astro check` no se usa**: no soporta TypeScript 7, que es
+   la versión que instala el proyecto. Los `.astro` los valida `astro build`.
+10. **`paths` sin `baseUrl`**: TypeScript 7 eliminó `baseUrl`, así que el alias se
+   declara como `"@/*": ["./src/*"]` (ruta relativa al `tsconfig.json`).
 
 ### 0.4 Mapa de archivos final (referencia)
 
@@ -275,36 +279,67 @@ e índices. Incluye los scripts de `init`, `reset` y `seed`.
 ### Dependencias
 ```bash
 npm install mongodb zod
+npm install -D dotenv typescript
 ```
+
+> Versiones instaladas (verificadas): `mongodb@7.6.0`, `zod@4.6.5`,
+> `dotenv@18.0.3`, `typescript@7.0.2`.
 
 ### Archivos
 
-**`src/lib/db/client.ts`** — patrón de conexión cacheada. En Vercel, cada
-invocación puede reutilizar el proceso: sin cache se agotan las conexiones de
-Atlas.
+**`src/lib/db/client.ts`** — conexión cacheada en el ámbito global. En Vercel
+cada invocación puede reutilizar el proceso y en desarrollo el hot-reload
+reevalúa los módulos: sin esta caché se abriría un pool nuevo cada vez y Atlas
+agotaría su límite de conexiones.
+
+Exporta `getMongoClient()`, `getDb()` y `closeMongoClient()`.
+
+**La conexión es perezosa**, no se valida en el tope del módulo: así importar el
+archivo nunca falla durante `astro build`, donde las variables de entorno pueden
+no estar disponibles. El error salta en el primer uso real, con un mensaje que
+apunta a `.env.example`.
+
 ```ts
-import { MongoClient, type Db } from 'mongodb';
+const GLOBAL_KEY = '__readingAppMongoClient__';
 
-const uri = process.env.MONGODB_URI;
-const dbName = process.env.MONGODB_DB_NAME;
-if (!uri || !dbName) throw new Error('Faltan MONGODB_URI / MONGODB_DB_NAME');
-
-// El global sobrevive al hot-reload de dev y al reuso de contenedor en Vercel.
-const g = globalThis as unknown as { _mongo?: Promise<MongoClient> };
-const clientPromise = g._mongo ?? (g._mongo = new MongoClient(uri, {
-  maxPoolSize: 10,
-  serverSelectionTimeoutMS: 8000,
-}).connect());
-
-export async function getDb(): Promise<Db> {
-  return (await clientPromise).db(dbName);
-}
-export async function getMongoClient(): Promise<MongoClient> {
-  return clientPromise;
+export function getMongoClient(): Promise<MongoClient> {
+  const g = globalThis as GlobalWithMongo;
+  if (!g[GLOBAL_KEY]) {
+    const client = new MongoClient(requireEnv('MONGODB_URI'), {
+      maxPoolSize: 10,
+      minPoolSize: 0,
+      serverSelectionTimeoutMS: 8_000,
+      maxIdleTimeMS: 60_000,   // en serverless nadie usa las conexiones ociosas
+    });
+    g[GLOBAL_KEY] = client.connect();
+  }
+  return g[GLOBAL_KEY];
 }
 ```
 
-**`src/lib/time.ts`** — única fuente de verdad temporal.
+`closeMongoClient()` es **solo para scripts**: si se llamara dentro de una
+petición, la siguiente tendría que reconectar desde cero. Los tres scripts la
+invocan en un `.finally()` para que el proceso termine.
+
+**`src/lib/time.ts`** — única fuente de verdad temporal. API completa:
+
+| Función | Para qué |
+|---|---|
+| `dayKey(date, tz)` | `"YYYY-MM-DD"` en la zona del usuario (vía `en-CA`, cuyo formato corto ya es ISO) |
+| `isoWeekday(date, tz)` | 1..7 de un instante, en la zona del usuario |
+| `isoWeekdayOfDayKey(key)` | 1..7 de un `dayKey` (no necesita zona) |
+| `parseDayKey(key)` | `dayKey` → `Date` **a mediodía UTC**, inmune a desplazamientos de ±12 h |
+| `addDays(key, n)` / `diffDays(from, to)` | aritmética de días |
+| `weekKeyFromDayKey(key)` | `"YYYY-Www"` ISO-8601 |
+| `startOfWeekDayKey(key)` | `dayKey` del lunes de esa semana |
+| `dayKeysBetween(from, to)` | rango, `from` exclusivo y `to` inclusive (base de la reconciliación) |
+| `lastNDayKeys(endKey, n)` | series de los gráficos, sin huecos |
+| `formatDuration(seconds)` | `"MM:SS"` o `"H:MM:SS"` |
+| `isValidTimezone(tz)` | validación para el endpoint de perfil |
+| `WEEKDAY_LABELS` | etiquetas `L M X J V S D` para los chips de la Tanda 4 |
+
+> `parseDayKey` interpreta a **mediodía** UTC a propósito: a medianoche, cualquier
+> operación que reste horas movería la fecha al día anterior.
 ```ts
 /** "YYYY-MM-DD" en la zona horaria del usuario. */
 export function dayKey(date: Date, tz: string): string {
@@ -352,6 +387,8 @@ export const addDays = (k: string, n: number) =>
 ```ts
 export type DayOutcome = 'pending' | 'completed' | 'missed' | 'rest';
 
+// Ningún tipo incluye `_id`: usa `WithId<T>` del driver donde lo necesites.
+
 export interface ProfileDoc {
   userId: string;
   timezone: string;            // IANA, ej. "America/Bogota"
@@ -364,7 +401,6 @@ export interface ProfileDoc {
 }
 
 export interface ReadingSessionDoc {
-  _id?: unknown;
   userId: string;
   dayKey: string;
   bookTitle: string | null;
@@ -374,6 +410,7 @@ export interface ReadingSessionDoc {
   accumulatedSeconds: number;  // tiempo consolidado (sin el tramo en curso)
   endedAt: Date | null;
   durationSeconds: number;     // definitivo al completar
+  settledAt: Date | null;      // marca de liquidación: impide pagar dos veces
   createdAt: Date;
   updatedAt: Date;
 }
@@ -448,17 +485,17 @@ await (await getMongoClient()).close();
 > El índice único `(userId, dayKey)` en `dailyProgress` es lo que hace seguro el
 > `upsert` de la Tanda 7 frente a peticiones concurrentes.
 
-**`scripts/db-reset.ts`** — borra `profiles`, `readingSessions`, `dailyProgress`,
-`gameState`, `gameEvents`, `user`, `session`, `account`, `verification`.
-**Debe abortar** si `process.env.ALLOW_DB_RESET !== 'yes'` e imprimir el nombre
-de la DB antes de borrar.
+**`scripts/db-reset.ts`** — vacía `profiles`, `readingSessions`, `dailyProgress`,
+`gameState`, `gameEvents` (constante `APP_COLLECTIONS`) y `user`, `session`,
+`account`, `verification` (constante `BETTER_AUTH_COLLECTIONS`, ambas exportadas
+desde `db/types.ts`).
+
+- **Aborta** si `process.env.ALLOW_DB_RESET !== 'yes'` e imprime el nombre de la
+  base de datos antes de tocar nada.
+- Usa `deleteMany({})`, **no `drop()`**: así conserva los índices creados por
+  `db:init` y no hay que volver a ejecutarlo tras cada limpieza.
 
 **`scripts/db-seed.ts`** — placeholder por ahora; se completa en la Tanda 9.
-
-### Dependencia extra para scripts
-```bash
-npm install -D dotenv
-```
 
 ### Qué necesito de tu lado
 1. `MONGODB_URI` y `MONGODB_DB_NAME` ya en `.env`.
@@ -466,7 +503,10 @@ npm install -D dotenv
 3. Ejecutar `npm run db:init` y pegarme la salida.
 
 ### Criterio de aceptación
-- `npm run db:init` imprime "Índices creados." y termina (proceso cerrado).
+- `npm run db:init` lista los 7 índices y el proceso termina solo (sin `Ctrl+C`:
+  prueba de que `closeMongoClient()` funciona).
+- `npm run db:reset` **sin** `ALLOW_DB_RESET=yes` se niega a borrar.
+- `npm run typecheck` sin errores.
 
 ---
 

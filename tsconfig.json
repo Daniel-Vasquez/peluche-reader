@@ -5,9 +5,9 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "jsxImportSource": "react",
-    "baseUrl": ".",
+    // TypeScript 7 eliminó `baseUrl`: los paths se resuelven relativos a este archivo.
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   }
 }
