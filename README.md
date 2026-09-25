@@ -18,6 +18,10 @@ La planificación técnica completa, dividida en tandas ejecutables, está en
 
 ## Puesta en marcha
 
+Requiere **Node 24** (`engines.node: "24.x"`), la misma versión con la que Vercel
+construye y ejecuta las funciones. Con otra versión `npm install` avisa
+`EBADENGINE`, pero funciona.
+
 ```bash
 cp .env.example .env     # y rellena los valores
 npm install

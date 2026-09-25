@@ -2138,7 +2138,51 @@ ready"*: el adaptador de Vercel no trae servidor de previsualización. Para
 probar un build de producción en local hace falta `vercel dev`
 (`npm i -g vercel`). El día a día se verifica con `npm run dev`.
 
-### 9.4 Despliegue en Vercel
+### 9.4 Fija `engines.node` a un mayor concreto
+
+El `package.json` que genera `create-astro` trae `"node": ">=22.12.0"`, y Vercel
+avisa:
+
+> Detected `"engines": { "node": ">=22.12.0" }` in your `package.json` that will
+> automatically upgrade when a new major Node.js Version is released.
+
+No es cosmético. Con un rango abierto, Vercel salta al siguiente mayor en cuanto
+sale, y **el adaptador elige el runtime de la función a partir del Node del
+build**, no de `engines`:
+
+```js
+// node_modules/@astrojs/vercel/dist/index.js
+const SUPPORTED_NODE_VERSIONS = {
+  18: { status: 'deprecated' },
+  20: { status: 'available' },
+  22: { status: 'available' },
+  24: { status: 'default' },
+};
+// Un mayor desconocido cae a "nodejs24.x" con un warning.
+```
+
+Así que si Vercel construyera con Node 26, el adaptador no lo reconocería y
+emitiría `nodejs24.x`: **el build correría en 26 y la función en 24**. Una
+discrepancia silenciosa entre las dos, que es de las peores cosas que se pueden
+llevar a producción.
+
+```json
+"engines": { "node": "24.x" }
+```
+
+Con eso Vercel construye en 24, el adaptador emite `nodejs24.x` y las dos
+versiones coinciden. Se añade también un `.nvmrc` con `24`.
+
+**En local, `npm install` avisa `EBADENGINE`** si tu Node es otro. Es un *warning*,
+no un error (`engine-strict` está en `false`), y el proyecto funciona igual. Para
+quitarlo y tener paridad con producción, instala Node 24 con el gestor que uses:
+
+```bash
+nodenv install 24.19.0 && nodenv local 24.19.0   # nodenv
+nvm install 24 && nvm use 24                     # nvm
+```
+
+### 9.5 Despliegue en Vercel
 ```bash
 npm i -g vercel
 vercel link
@@ -2149,9 +2193,8 @@ Checklist antes de publicar:
 - [ ] `BETTER_AUTH_URL`, `PUBLIC_BETTER_AUTH_URL`, `PUBLIC_SITE_URL` con el
       dominio `https://` real.
 - [ ] Atlas: Network Access `0.0.0.0/0`.
-- [ ] Runtime de Node: Vercel Functions no soporta Node 26 (versión local). El
-      adaptador cae automáticamente a **Node 24**; si quieres paridad exacta,
-      usa Node 24 en local (`nvm use 24`).
+- [ ] **`engines.node` fijado a un mayor concreto**: `"node": "24.x"`, nunca un
+      rango abierto. Ver más abajo.
 - [ ] `npm run db:init` ejecutado **contra la base de producción**.
 - [ ] `ALLOW_DB_RESET` **ausente o `no`** en Vercel.
 - [ ] Registro + login probados en el dominio de producción (las cookies
