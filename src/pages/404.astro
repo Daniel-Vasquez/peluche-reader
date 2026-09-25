@@ -1,0 +1,51 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import ThemeToggle from '@/components/ThemeToggle';
+
+export const prerender = false;
+
+const appName = import.meta.env.PUBLIC_APP_NAME ?? 'Peluche Reader';
+// El middleware ya resolvió la sesión: si la hay, el camino de vuelta es la app.
+const user = Astro.locals.user;
+---
+
+<BaseLayout title="Página no encontrada">
+  <div class="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-6">
+    <header class="flex items-center justify-between gap-4 py-5">
+      <a href="/" class="text-sm font-semibold tracking-wide text-primary uppercase">
+        {appName}
+      </a>
+      <ThemeToggle client:load />
+    </header>
+
+    <main class="flex grow flex-col justify-center py-10">
+      <p class="text-sm font-medium text-text-soft">Error 404</p>
+      <h1 class="mt-2 text-3xl font-semibold text-balance sm:text-4xl">
+        Esta página se escapó del refugio.
+      </h1>
+      <p class="mt-4 max-w-lg text-pretty text-text-soft">
+        La dirección que buscas no existe. Tus perritos y tus minutos están a salvo
+        donde los dejaste.
+      </p>
+
+      <div class="mt-8 flex flex-wrap gap-3">
+        <a
+          href={user ? '/app' : '/'}
+          class="rounded-card bg-primary px-5 py-2.5 font-medium text-on-primary transition hover:bg-primary-hover"
+        >
+          {user ? 'Volver a mi refugio' : 'Ir al inicio'}
+        </a>
+        {
+          user && (
+            <a
+              href="/progreso"
+              class="rounded-card border border-border bg-surface px-5 py-2.5 font-medium text-text transition hover:border-primary hover:text-primary"
+            >
+              Ver mi progreso
+            </a>
+          )
+        }
+      </div>
+    </main>
+  </div>
+</BaseLayout>

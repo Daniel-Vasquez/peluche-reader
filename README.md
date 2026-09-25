@@ -39,7 +39,17 @@ npm run dev              # http://localhost:4321
 | `npm run preview` | **No funciona** con el adaptador de Vercel; usa `vercel dev` |
 | `npm run db:init` | Crea los índices de MongoDB |
 | `npm run db:reset` | Limpia las colecciones (requiere `ALLOW_DB_RESET=yes`) |
-| `npm run db:seed` | Genera datos de demostración |
+| `npm run db:seed` | Crea un usuario de demo con 8 semanas de historia |
+
+## Datos de demostración
+
+```bash
+npm run db:seed
+```
+
+Crea una cuenta con 8 semanas de historia para ver el dashboard con relieve.
+Apunta `SEED_USER_EMAIL` a un correo que **no** sea el tuyo: el script se niega a
+ejecutarse si el correo ya está registrado, porque nunca borra cuentas.
 
 ## Estado
 
@@ -52,4 +62,4 @@ npm run dev              # http://localhost:4321
 - [x] **Tanda 6** · Motor de gamificación (lógica pura + 42 tests)
 - [x] **Tanda 7** · Integración: las sesiones mueven perritos, refugio visual
 - [x] **Tanda 8** · Dashboard de progreso (Recharts, rampa validada)
-- [ ] Tanda 9 · Semilla, pulido y despliegue
+- [x] **Tanda 9** · Semilla de datos, páginas de error y despliegue

@@ -2254,16 +2254,78 @@ Datos de demo reproducibles, revisión final de calidad y app en producción.
 Ninguna nueva.
 
 ### 9.1 `scripts/db-seed.ts`
-Crea (vía la API de Better Auth, no insertando a mano en `user`) el usuario de
-`SEED_USER_EMAIL` / `SEED_USER_PASSWORD` y genera 21 días de historia realista
-leyendo **"Influencia: La Psicología de la Persuasión"**:
-- `scheduledDays: [1,2,3,4,5]`, `timezone` de `.env`.
-- Días cumplidos con minutos variados (12, 18, 22, 31, 9…) y 3 días programados
-  fallados repartidos, para que se vean penalizaciones reales en las gráficas.
-- Debe pasar por `settleSession` y `reconcile` —**no** escribir `gameState` a
-  mano: así el seed también actúa como test de integración del motor.
 
-### 9.2 Pulido
+Crea el usuario **vía `auth.api.signUpEmail`**, no insertando a mano en `user`, y
+genera **8 semanas** de historia leyendo *"Influencia: La Psicología de la
+Persuasión"*: `scheduledDays: [1..5]`, minutos variados, tres días programados
+fallados y uno con lectura por debajo del umbral.
+
+#### Simula el paso del tiempo, día a día
+
+**No escribe `gameState` a mano.** Recorre los días llamando a `syncOnVisit` y
+`settleSession` con un `now` falso, igual que haría la app. Así el seed es además
+un test de integración del motor.
+
+```ts
+for (let i = 0; i < WEEKS * 7; i += 1) {
+  const day = addDays(firstDay, i);
+  const noon = new Date(`${day}T12:00:00.000Z`);
+
+  await syncOnVisit(userId, noon);          // 1. entrar ese día
+  const minutes = minutesFor(day, i);
+  if (minutes === 0) continue;
+  // 2. leer, 3. liquidar con el reloj de ese día
+  await settleSession(userId, { ...doc, _id: insertedId }, noon);
+}
+```
+
+**El orden importa y no es un detalle.** Si se crean todas las sesiones primero y
+se reconcilia al final, el motor ve un pasado sin lecturas, penaliza los 56 días y
+**la racha sale en cero**. Con la simulación día a día sale `racha 10, récord 12`,
+que es lo correcto.
+
+#### ⚠️ El seed NUNCA borra un usuario existente
+
+Una versión anterior empezaba borrando "los datos previos del usuario de
+demostración" para poder repetirse. Cuando `SEED_USER_EMAIL` apuntaba por descuido
+a una cuenta real, **se la llevó por delante**. Poder repetir el seed no vale una
+cuenta borrada.
+
+Ahora comprueba **antes de escribir nada**:
+
+1. Que `SEED_USER_PASSWORD` llegue al mínimo de 8 caracteres de Better Auth.
+2. Que el correo **no** esté ya registrado; si lo está, aborta y dice qué cambiar.
+
+Regla general: **un script de datos de ejemplo no borra cuentas.** Si necesita un
+estado limpio, que use un correo nuevo.
+
+#### ⚠️ Better Auth guarda `userId` como `ObjectId`; nuestras colecciones, como `string`
+
+```js
+account.userId  // ObjectId  ← user, session, account (Better Auth)
+profiles.userId // string    ← profiles, readingSessions, dailyProgress,
+                //             gameState, gameEvents (nuestras)
+```
+
+Un `deleteMany({ userId: String(id) })` sobre `account` o `session` **no borra
+nada** y no avisa. Para las colecciones de Better Auth hay que construir
+`new ObjectId(id)`. Es justo lo que salvó el hash de contraseña en el incidente de
+arriba, pero como bug es una bomba de relojería en cualquier limpieza.
+
+### 9.2 Páginas de error
+
+`src/pages/404.astro` y `src/pages/500.astro`, ambas con `prerender = false` para
+poder leer `Astro.locals.user`:
+
+- El **404** ofrece el camino de vuelta según haya sesión o no: "Volver a mi
+  refugio" + "Ver mi progreso" si la hay, "Ir al inicio" si no. Lleva el toggle de
+  tema, como el resto de páginas.
+- El **500** dice explícitamente que el progreso no se ha perdido —las sesiones se
+  guardan en el servidor conforme ocurren—, que es la duda real del usuario.
+  **El detalle del error solo se muestra con `import.meta.env.DEV`**: en producción
+  puede contener cadenas de conexión o nombres de colección.
+
+### 9.3 Pulido
 - **SEO/meta**: título, descripción y `og:image` en `BaseLayout`.
 - **Estados de carga**: skeletons en `Shelter` y gráficas; nunca layout shift.
 - **Errores**: `src/pages/404.astro` y `500.astro` con la identidad visual.
@@ -2275,14 +2337,14 @@ leyendo **"Influencia: La Psicología de la Persuasión"**:
 - **Zona horaria**: si `Intl...timeZone` del navegador difiere del perfil, ofrecer
   actualizarla (un viaje no debe romper la contabilidad de días).
 
-### 9.3 `npm run preview` no funciona con el adaptador de Vercel
+### 9.4 `npm run preview` no funciona con el adaptador de Vercel
 
 `astro preview` aborta con *"Preview server process exited before becoming
 ready"*: el adaptador de Vercel no trae servidor de previsualización. Para
 probar un build de producción en local hace falta `vercel dev`
 (`npm i -g vercel`). El día a día se verifica con `npm run dev`.
 
-### 9.4 Fija `engines.node` a un mayor concreto
+### 9.5 Fija `engines.node` a un mayor concreto
 
 El `package.json` que genera `create-astro` trae `"node": ">=22.12.0"`, y Vercel
 avisa:
@@ -2326,7 +2388,7 @@ nodenv install 24.19.0 && nodenv local 24.19.0   # nodenv
 nvm install 24 && nvm use 24                     # nvm
 ```
 
-### 9.5 Despliegue en Vercel
+### 9.6 Despliegue en Vercel
 ```bash
 npm i -g vercel
 vercel link
@@ -2351,8 +2413,19 @@ Checklist antes de publicar:
 3. Confirmarme el dominio final para fijar las URLs.
 
 ### Criterio de aceptación
-Registro, sesión de lectura y `/progreso` funcionando en producción; los
-perritos persisten tras cerrar el navegador.
+- `npm run db:seed` contra un correo de demostración produce **racha ≠ 0**: si sale
+  cero, la simulación no está avanzando día a día.
+- El seed **aborta sin escribir** si la contraseña es corta o el correo ya existe.
+- `/ruta-inexistente` devuelve **404** (no 500) y ofrece un camino de vuelta
+  distinto según haya sesión.
+- Ni la URI de Mongo ni el valor de `BETTER_AUTH_SECRET` aparecen en
+  `dist/client/` (búscalos por **valor**, no por nombre: el nombre
+  `BETTER_AUTH_SECRET` sí sale, es un getter de Better Auth que lee `process.env`,
+  vacío en el navegador).
+- Recharts (**95 KB gzip**) se carga **solo en `/progreso`**, nunca en `/app`:
+  es lo que compra el `client:visible`.
+- Registro, sesión de lectura y `/progreso` funcionando en producción; los
+  perritos persisten tras cerrar el navegador.
 
 ---
 

@@ -1,0 +1,56 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+
+export const prerender = false;
+
+interface Props {
+  error?: unknown;
+}
+
+const { error } = Astro.props;
+const appName = import.meta.env.PUBLIC_APP_NAME ?? 'Peluche Reader';
+
+/*
+ * El detalle del error solo se muestra en desarrollo. En producción puede
+ * contener cadenas de conexión o nombres de colección, y eso no se enseña.
+ */
+const detail = import.meta.env.DEV && error instanceof Error ? error.message : null;
+---
+
+<BaseLayout title="Algo falló">
+  <div class="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-6">
+    <header class="py-5">
+      <a href="/" class="text-sm font-semibold tracking-wide text-primary uppercase">
+        {appName}
+      </a>
+    </header>
+
+    <main class="flex grow flex-col justify-center py-10">
+      <p class="text-sm font-medium text-text-soft">Error 500</p>
+      <h1 class="mt-2 text-3xl font-semibold text-balance sm:text-4xl">
+        Se nos cayó algo por dentro.
+      </h1>
+      <p class="mt-4 max-w-lg text-pretty text-text-soft">
+        No es culpa tuya y tu progreso no se ha perdido: las sesiones y los perritos
+        se guardan en el servidor conforme ocurren. Vuelve a intentarlo en un momento.
+      </p>
+
+      {
+        detail && (
+          <pre class="mt-6 overflow-x-auto rounded-card border border-border bg-muted px-4 py-3 text-sm text-text-soft">
+            {detail}
+          </pre>
+        )
+      }
+
+      <div class="mt-8">
+        <a
+          href="/app"
+          class="rounded-card bg-primary px-5 py-2.5 font-medium text-on-primary transition hover:bg-primary-hover"
+        >
+          Reintentar
+        </a>
+      </div>
+    </main>
+  </div>
+</BaseLayout>

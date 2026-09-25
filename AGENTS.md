@@ -89,3 +89,15 @@ nunca hexadecimales en el componente. Reglas que no se negocian:
   gráfica tiene su tabla equivalente.
 - Rejilla horizontal hairline **sólida**, ejes sin línea, barras ≤ 24 px con extremo
   redondeado de 4 px, línea de 2 px, relleno de área en lavado.
+
+### Datos y scripts
+
+- **Ningún script borra cuentas.** Si necesita un estado limpio, que use un correo
+  nuevo y aborte si ya existe. `db:reset` es la única excepción y exige
+  `ALLOW_DB_RESET=yes`.
+- **Better Auth guarda `userId` como `ObjectId`** en `user`, `session` y `account`;
+  nuestras colecciones lo guardan como `string`. Un `deleteMany({ userId: "..." })`
+  sobre las de Better Auth no borra nada y no avisa.
+- Al simular el paso del tiempo (seeds, pruebas), avanza **día a día** llamando a
+  `syncOnVisit`/`settleSession` con un `now` falso. Reconciliar todo al final hace
+  que el motor vea un pasado sin lecturas y la racha salga en cero.
