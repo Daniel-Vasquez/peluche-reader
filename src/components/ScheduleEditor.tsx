@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { clsx } from 'clsx';
 import Button from '@/components/ui/Button';
+import Field from '@/components/ui/Field';
 import { authClient } from '@/lib/auth-client';
 import { checkName, NAME_MAX_LENGTH, NAME_MIN_LENGTH } from '@/lib/name';
 import { WEEKDAY_LABELS, type IsoWeekday } from '@/lib/time';
@@ -18,10 +19,8 @@ interface Props {
   onboarding: boolean;
 }
 
-/* Sin `focus:outline-none`: anulaba el anillo global de `:focus-visible`. */
-const inputClass =
-  'w-full rounded-card border border-border bg-surface px-3.5 py-2.5 text-text ' +
-  'placeholder:text-text-soft transition focus:border-primary';
+/** `id` del mensaje de error, compartido con el `aria-describedby` de los campos. */
+const ERROR_ID = 'ajustes-error';
 
 /** Inicio de la app con sesión. Solo se usa al terminar el onboarding. */
 const HOME_PATH = '/app';
@@ -192,34 +191,29 @@ export default function ScheduleEditor({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
-      <fieldset>
-        <label htmlFor="name" className="block text-sm font-medium">
-          Tu nombre
-        </label>
-        <p id="name-hint" className="mt-1 mb-2 text-sm text-text-soft">
-          Con esto te saludamos y así se llama tu refugio.
-        </p>
-        <input
-          id="name"
-          type="text"
-          autoComplete="name"
-          required
-          minLength={NAME_MIN_LENGTH}
-          maxLength={NAME_MAX_LENGTH}
-          value={name}
-          onChange={(e) => {
-            setName(e.target.value);
-            setJustSaved(false);
-          }}
-          aria-invalid={(error !== null && /nombre/i.test(error)) || undefined}
-          aria-describedby={
-            [error && /nombre/i.test(error) ? 'ajustes-error' : null, 'name-hint']
-              .filter(Boolean)
-              .join(' ')
-          }
-          className={inputClass}
-        />
-      </fieldset>
+      <Field
+        id="name"
+        label="Tu nombre"
+        hint="Con esto te saludamos y así se llama tu refugio."
+        invalid={error !== null && /nombre/i.test(error)}
+        errorId={ERROR_ID}
+      >
+        {(field) => (
+          <input
+            {...field}
+            type="text"
+            autoComplete="name"
+            required
+            minLength={NAME_MIN_LENGTH}
+            maxLength={NAME_MAX_LENGTH}
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              setJustSaved(false);
+            }}
+          />
+        )}
+      </Field>
 
       <fieldset>
         <legend className="text-sm font-medium">Días que te comprometes a leer</legend>
@@ -230,7 +224,7 @@ export default function ScheduleEditor({
 
         <div
           className="flex flex-wrap gap-2"
-          aria-describedby={error && /día/i.test(error) ? 'ajustes-error' : undefined}
+          aria-describedby={error && /día/i.test(error) ? ERROR_ID : undefined}
         >
           {ISO_DAYS.map((day) => {
             const selected = days.includes(day);
@@ -262,48 +256,44 @@ export default function ScheduleEditor({
         </p>
       </fieldset>
 
-      <fieldset>
-        <label htmlFor="goal" className="block text-sm font-medium">
-          Meta por sesión
-        </label>
-        <p className="mt-1 mb-2 text-sm text-text-soft">
-          Solo orienta el cronómetro; no cambia las recompensas.
-        </p>
-        <select
-          id="goal"
-          value={goal}
-          onChange={(e) => {
-            setGoal(Number(e.target.value));
-            setJustSaved(false);
-          }}
-          className={inputClass}
-        >
-          {goalOptions.map((minutes) => (
-            <option key={minutes} value={minutes}>
-              {minutes} minutos
-            </option>
-          ))}
-        </select>
-      </fieldset>
+      <Field
+        id="goal"
+        label="Meta por sesión"
+        hint="Solo orienta el cronómetro; no cambia las recompensas."
+      >
+        {(field) => (
+          <select
+            {...field}
+            value={goal}
+            onChange={(e) => {
+              setGoal(Number(e.target.value));
+              setJustSaved(false);
+            }}
+          >
+            {goalOptions.map((minutes) => (
+              <option key={minutes} value={minutes}>
+                {minutes} minutos
+              </option>
+            ))}
+          </select>
+        )}
+      </Field>
 
-      <fieldset>
-        <label htmlFor="book" className="block text-sm font-medium">
-          Libro actual
-        </label>
-        <p className="mt-1 mb-2 text-sm text-text-soft">Opcional.</p>
-        <input
-          id="book"
-          type="text"
-          maxLength={160}
-          value={book}
-          onChange={(e) => {
-            setBook(e.target.value);
-            setJustSaved(false);
-          }}
-          placeholder="Influencia: La Psicología de la Persuasión"
-          className={inputClass}
-        />
-      </fieldset>
+      <Field id="book" label="Libro actual" hint="Opcional.">
+        {(field) => (
+          <input
+            {...field}
+            type="text"
+            maxLength={160}
+            value={book}
+            onChange={(e) => {
+              setBook(e.target.value);
+              setJustSaved(false);
+            }}
+            placeholder="Influencia: La Psicología de la Persuasión"
+          />
+        )}
+      </Field>
 
       <div className="rounded-card border border-border bg-muted px-3.5 py-2.5 text-sm">
         <p className="text-text-soft">
