@@ -1,4 +1,4 @@
-import type { GameEventDoc, GameStateDoc } from '@/lib/db/types';
+import type { DayOutcome, GameEventDoc, GameStateDoc } from '@/lib/db/types';
 import { dayKeysBetween, isoWeekdayOfDayKey, weekKeyFromDayKey, type IsoWeekday } from '@/lib/time';
 import { GAME } from './config';
 import { effectivePenalty } from './penalties';
@@ -28,6 +28,15 @@ export type GameAction =
 export interface ApplyResult {
   state: GameState;
   events: NewEvent[];
+}
+
+export interface ReconcileResult extends ApplyResult {
+  /**
+   * Cómo terminó cada día evaluado. La capa de persistencia lo escribe en
+   * `dailyProgress.outcome`; devolverlo desde aquí evita que el servicio
+   * reimplemente la comprobación de "¿era un día programado?".
+   */
+  days: { dayKey: string; outcome: DayOutcome }[];
 }
 
 /** Aforo que corresponde a un número de adopciones acumuladas. */
@@ -150,9 +159,10 @@ export function reconcile(
   todayKey: string,
   scheduledDays: readonly IsoWeekday[],
   completedDays: ReadonlySet<string>,
-): ApplyResult {
+): ReconcileResult {
   let s = state;
   const events: NewEvent[] = [];
+  const days: { dayKey: string; outcome: DayOutcome }[] = [];
 
   for (const day of dayKeysBetween(s.lastReconciledDay, todayKey)) {
     if (day >= todayKey) break; // hoy todavía se puede salvar
@@ -173,6 +183,7 @@ export function reconcile(
         bestStreak: Math.max(s.bestStreak, streak),
         lastReconciledDay: day,
       };
+      days.push({ dayKey: day, outcome: 'completed' });
       continue;
     }
 
@@ -183,7 +194,8 @@ export function reconcile(
     });
     s = applied.state;
     events.push(...applied.events);
+    days.push({ dayKey: day, outcome: isScheduled ? 'missed' : 'rest' });
   }
 
-  return { state: s, events };
+  return { state: s, events, days };
 }

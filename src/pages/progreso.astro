@@ -1,8 +1,13 @@
 ---
 import AppLayout from '@/layouts/AppLayout.astro';
 import Card from '@/components/ui/Card.astro';
+import { syncOnVisit } from '@/lib/game/service';
 
 export const prerender = false;
+
+// Reconcilia los días cerrados también aquí: el usuario puede entrar directo
+// a /progreso sin pasar por /app, y vería cifras sin las penalizaciones al día.
+const snapshot = await syncOnVisit(Astro.locals.user!.id);
 ---
 
 <AppLayout
@@ -11,7 +16,9 @@ export const prerender = false;
 >
   <Card>
     <p class="text-text-soft">
-      Las gráficas llegan en la Tanda 8, cuando ya existan sesiones que medir.
+      Las gráficas llegan en la Tanda 8. Por ahora, tu refugio tiene
+      <span class="font-medium text-text">{snapshot.shelter.dogs}</span> perritos y
+      <span class="font-medium text-text">{snapshot.shelter.adopted}</span> adoptados.
     </p>
   </Card>
 </AppLayout>

@@ -3,6 +3,7 @@ import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { badRequest, json, notFound, readJson, unauthorized } from '@/lib/api';
 import { col } from '@/lib/db/collections';
+import { settleSession } from '@/lib/game/service';
 import {
   completedSecondsForDay,
   finishSession,
@@ -21,10 +22,11 @@ const BodySchema = z.object({
 });
 
 /**
- * Cierra la sesión y devuelve el total del día.
+ * Cierra la sesión y liquida los perritos.
  *
- * En la **Tanda 7** este mismo endpoint liquidará además los perritos, llamando
- * a `settleSession()` justo después de cerrar.
+ * El orden importa: primero se cierra (`finishSession` fija la duración
+ * definitiva) y solo después se liquida, porque `settleSession` decide sobre
+ * `durationSeconds` y `status`.
  */
 export const POST: APIRoute = async ({ locals, request }) => {
   if (!locals.user) return unauthorized();
@@ -49,6 +51,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
 
   const now = new Date();
   const closed = await finishSession(session, now);
+  const reward = await settleSession(locals.user.id, closed, now);
   const daySeconds = await completedSecondsForDay(locals.user.id, closed.dayKey);
 
   return json({
@@ -57,5 +60,6 @@ export const POST: APIRoute = async ({ locals, request }) => {
     counted: closed.status === 'completed',
     minSessionSeconds: MIN_SESSION_SECONDS,
     daySeconds,
+    reward,
   });
 };

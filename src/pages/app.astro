@@ -3,16 +3,17 @@ import AppLayout from '@/layouts/AppLayout.astro';
 import Card from '@/components/ui/Card.astro';
 import Stat from '@/components/ui/Stat.astro';
 import ReadingTimer from '@/components/ReadingTimer';
+import Shelter from '@/components/Shelter';
+import { syncOnVisit } from '@/lib/game/service';
 import { ensureProfile } from '@/lib/repos/profile';
 import {
   abandonStaleSessions,
-  completedSecondsForDay,
   findOpenSession,
   MIN_SESSION_SECONDS,
 } from '@/lib/repos/sessions';
 import { toSessionView } from '@/lib/sessions-view';
 import { firstName } from '@/lib/name';
-import { WEEKDAY_LABELS, dayKey, formatDuration, isoWeekday } from '@/lib/time';
+import { WEEKDAY_LABELS, formatDuration } from '@/lib/time';
 
 export const prerender = false;
 
@@ -26,37 +27,46 @@ if (profile.onboardedAt === null) {
 }
 
 const now = new Date();
-const today = dayKey(now, profile.timezone);
-const todayWeekday = isoWeekday(now, profile.timezone);
-const isScheduledToday = profile.scheduledDays.includes(todayWeekday);
+
+// Liquida las penalizaciones de los días ya cerrados antes de pintar nada.
+const snapshot = await syncOnVisit(user.id, now);
 
 // Cierra lo que quedó abierto hace horas antes de ofrecer retomar una sesión:
 // si no, el usuario vería un cronómetro con el tiempo que pasó durmiendo.
 await abandonStaleSessions(user.id, now);
 const openSession = await findOpenSession(user.id);
-const daySeconds = await completedSecondsForDay(user.id, today);
 
 const greeting = firstName(user.name);
 const scheduledLabels = profile.scheduledDays.map((d) => WEEKDAY_LABELS[d].short);
+const { shelter, today } = snapshot;
 ---
 
 <AppLayout
   title="Hoy"
   heading={`Hola, ${greeting}`}
   subheading={
-    isScheduledToday
+    today.scheduled
       ? 'Hoy te comprometiste a leer.'
       : 'Hoy es día libre: no leer no te cuesta ningún perrito.'
   }
 >
   <Card>
+    <Shelter
+      client:load
+      shelter={shelter}
+      freshPenalties={snapshot.freshPenalties}
+      ownerName={user.name}
+    />
+  </Card>
+
+  <Card class="mt-4">
     <ReadingTimer
       client:load
       initialSession={openSession ? toSessionView(openSession, now) : null}
       bookTitle={profile.currentBookTitle}
       dailyGoalMinutes={profile.dailyGoalMinutes}
       minSessionSeconds={MIN_SESSION_SECONDS}
-      initialDaySeconds={daySeconds}
+      initialDaySeconds={today.totalSeconds}
     />
 
     {
@@ -68,13 +78,6 @@ const scheduledLabels = profile.scheduledDays.map((d) => WEEKDAY_LABELS[d].short
     }
   </Card>
 
-  <Card title={`El refugio de ${user.name}`} class="mt-4">
-    <p class="text-text-soft">
-      Los perritos y las recompensas llegan en la Tanda 7. Por ahora el cronómetro
-      ya guarda cada sesión.
-    </p>
-  </Card>
-
   <dl class="mt-4 grid gap-4 sm:grid-cols-3">
     <Stat
       label="Tu compromiso"
@@ -84,15 +87,19 @@ const scheduledLabels = profile.scheduledDays.map((d) => WEEKDAY_LABELS[d].short
     />
     <Stat
       label="Leído hoy"
-      value={formatDuration(daySeconds)}
-      hint={`meta de ${profile.dailyGoalMinutes} min`}
+      value={formatDuration(today.totalSeconds)}
+      hint={
+        today.dogsAwarded > 0
+          ? `${today.dogsAwarded} ${today.dogsAwarded === 1 ? 'perrito' : 'perritos'} ganados hoy`
+          : `meta de ${profile.dailyGoalMinutes} min`
+      }
       tone="accent"
     />
     <Stat
       label="Hoy"
-      value={isScheduledToday ? 'Día de lectura' : 'Día libre'}
-      hint={today}
-      tone={isScheduledToday ? 'primary' : 'neutral'}
+      value={today.scheduled ? 'Día de lectura' : 'Día libre'}
+      hint={today.dayKey}
+      tone={today.scheduled ? 'primary' : 'neutral'}
     />
   </dl>
 </AppLayout>

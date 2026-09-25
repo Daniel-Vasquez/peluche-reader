@@ -178,6 +178,7 @@ reading-app/
     │   ├── env.ts                # lector de variables (process.env + import.meta.env)
     │   ├── name.ts               # reglas del nombre (cliente + servidor)
     │   ├── sessions-view.ts      # forma de la sesión que viaja al navegador
+    │   ├── shelter-events.ts     # puente por evento DOM entre cronómetro y refugio
     │   ├── time.ts               # dayKey / weekKey / ISO weekday
     │   ├── db/
     │   │   ├── client.ts         # conexión cacheada
@@ -1619,9 +1620,21 @@ const capacityFor = (adopted: number) => Math.min(
   GAME.MAX_CAPACITY,
 );
 
-export function applyAction(state: GameState, action: GameAction): {
-  state: GameState; events: NewEvent[];
-} {
+export interface ApplyResult {
+  state: GameState;
+  events: NewEvent[];
+}
+
+/**
+ * `reconcile` devuelve además cómo terminó cada día evaluado. Así la capa de
+ * persistencia escribe `dailyProgress.outcome` sin reimplementar la
+ * comprobación de "¿era un día programado?".
+ */
+export interface ReconcileResult extends ApplyResult {
+  days: { dayKey: string; outcome: DayOutcome }[];
+}
+
+export function applyAction(state: GameState, action: GameAction): ApplyResult {
   const s: GameState = { ...state };
   const events: NewEvent[] = [];
 
@@ -1716,10 +1729,10 @@ export function reconcile(
   todayKey: string,
   scheduledDays: readonly IsoWeekday[],
   completedDays: ReadonlySet<string>,
-): ApplyResult {
+): ReconcileResult {
   let s = state;
-  const all: NewEvent[] = [];
-  let streakAlive = true;
+  const events: NewEvent[] = [];
+  const days: { dayKey: string; outcome: DayOutcome }[] = [];
 
   for (const day of dayKeysBetween(s.lastReconciledDay, todayKey)) {
     if (day >= todayKey) break;                       // hoy no se juzga
@@ -1830,7 +1843,23 @@ fallados.
 ### Dependencias
 Ninguna nueva.
 
-### 7.1 `src/lib/repos/progress.ts`
+### 7.1 Repositorios
+
+`addSessionToDay` usa `$inc` + `upsert`, que es atómico: dos sesiones terminando a
+la vez suman las dos, y el índice único `(userId, dayKey)` impide un segundo
+documento. `weekKey` se deriva del `dayKey`, no se pasa como parámetro.
+
+`setDayOutcome` anota `missed` / `rest` en un día cerrado con `upsert`, porque un
+día sin ninguna sesión no tiene documento todavía.
+
+**`src/lib/repos/gameState.ts`** — `ensureGameState`, `toGameState`,
+`saveGameState`, `appendEvents`, `recentEvents`.
+
+`appendEvents` desplaza `createdAt` **un milisegundo por evento**: varios eventos
+de la misma reconciliación se insertan en el mismo instante, y sin el
+desplazamiento la línea de tiempo de `/progreso` los ordenaría al azar.
+
+#### `src/lib/repos/progress.ts`
 
 ```ts
 /** Suma la sesión al día y devuelve el progreso actualizado. Atómico. */
@@ -1878,12 +1907,21 @@ export async function syncOnVisit(userId: string, now = new Date()): Promise<Gam
  * Devuelve `{ dogsGained, dogsTotal, adopted, minutesToday, nextStep }`
  * para que la UI pueda animar la ganancia.
  */
-export async function settleSession(userId: string, sessionId: string): Promise<SettleResult>;
+export async function settleSession(
+  userId: string,
+  session: WithId<ReadingSessionDoc>,   // el documento, no el id: ya está cargado
+  now?: Date,
+): Promise<SettleResult>;
 ```
 
 **Orden de operaciones en `settleSession` (no lo cambies):**
-1. Cargar sesión → validar `userId` y `status === 'completed'`.
-2. Si `durationSeconds < GAME.MIN_SESSION_SECONDS` → salir sin tocar nada.
+1. **Reconciliar primero.** Las penalizaciones de días pasados van **antes** que
+   la recompensa de hoy: si no, quien no entra en una semana y termina una sesión
+   vería la recompensa aplicada sobre un refugio todavía sin descontar.
+2. Si `status !== 'completed'` o `durationSeconds < MIN_SESSION_SECONDS` → salir
+   con `counted: false`, sin tocar el día ni el refugio.
+3. Si `session.settledAt` ya existe → devolver el estado actual **sin volver a
+   pagar**.
 3. `addSessionToDay(...)` → obtiene `totalSeconds` del día.
 4. `minutesToday = Math.floor(totalSeconds / 60)`.
 5. `applyAction(state, { kind: 'settle', minutesToday, alreadyAwarded: progress.dogsAwarded })`.
@@ -1901,10 +1939,42 @@ export async function settleSession(userId: string, sessionId: string): Promise<
 ### 7.3 Cambios en endpoints existentes
 - `/api/sessions/finish`: tras cerrar la sesión, llama a `settleSession` y
   devuelve `{ session, reward }`.
-- Middleware **no** llama a `syncOnVisit` (encarecería cada request). Lo llaman
-  los frontmatter de `/app`, `/progreso` y `/ajustes`.
+- El middleware **no** llama a `syncOnVisit`: encarecería *todas* las peticiones,
+  incluidos los endpoints y los assets. Lo llaman los frontmatter de `/app` y
+  `/progreso` (esta última porque el usuario puede entrar ahí directo y vería
+  cifras sin las penalizaciones al día).
+- `reconcileAndPersist` **no escribe nada** si `reconcile` devuelve cero eventos y
+  el mismo `lastReconciledDay`: entrar cien veces en un día no genera ni una
+  escritura.
 
-### 7.4 UI — `src/components/Shelter.tsx`
+### 7.4 Las dos islas se hablan por un evento del DOM
+
+`ReadingTimer` y `Shelter` son **islas de Astro independientes**: no comparten
+estado de React. Recargar la página tras liquidar funcionaría, pero perdería la
+animación de los perritos volviendo, que es el pago emocional del sistema.
+
+`src/lib/shelter-events.ts` es el acoplamiento más ligero posible:
+
+```ts
+export const SHELTER_UPDATED = 'peluche:shelter-updated';
+export function emitShelterUpdate(detail: ShelterUpdatedDetail): void { … }
+export function onShelterUpdate(handler): () => void { … }   // devuelve la limpieza
+```
+
+El cronómetro emite tras `finish` con el `shelter` que devolvió el servidor; el
+refugio se suscribe con `useEffect(() => onShelterUpdate(setShelter), [])` y se
+repinta **sin recargar**. Verificado: la URL no cambia y la rejilla pasa de
+`🐶×5 · ·` a `🐶×7`.
+
+> **Nota de diseño**: con `START_DOGS === BASE_CAPACITY` (7 y 7), el refugio de una
+> cuenta nueva empieza **lleno**, así que su primera recompensa no se ve en la
+> rejilla: los perritos van directos a "Adoptados". El mensaje del cronómetro
+> (`+4 perritos · 4 adoptados`) y el contador lo dicen, pero el pago visual solo
+> llega tras haber perdido alguna plaza. Es consecuencia del balance
+> especificado, no un error; para que la primera sesión se notara en la rejilla
+> habría que abrir con `dogs < capacity`.
+
+### 7.5 UI — `src/components/Shelter.tsx`
 - Rejilla de `capacity` casillas: perrito vivo (ilustración a color) vs. hueco
   vacío (silueta gris `--color-muted`).
 - Al ganar: las casillas entran con un `scale/fade` escalonado (50 ms de desfase)
@@ -1920,7 +1990,7 @@ export async function settleSession(userId: string, sessionId: string): Promise<
 `aria-label="Refugio: 5 de 8 perritos"`; el detalle textual vive en una lista
 visualmente oculta. Nunca comuniques el estado solo por color.
 
-### 7.5 Enganche en `/app`
+### 7.6 Enganche en `/app`
 ```astro
 ---
 import { syncOnVisit } from '@/lib/game/service';
@@ -1933,15 +2003,31 @@ const snapshot = await syncOnVisit(Astro.locals.user!.id);
 ```
 
 ### Qué necesito de tu lado
-1. Ilustraciones/sprites en `public/dogs/` (`dog.svg`, `dog-empty.svg`). Si no
-   los tienes, se usan emojis 🐶 / 🕳️ como placeholder y se sustituyen después.
+1. **Opcional**: ilustraciones en `public/dogs/` (`dog.svg`, `dog-empty.svg`). De
+   momento se usa el emoji 🐶 para la plaza ocupada y una casilla de borde
+   discontinuo para la vacía, que funciona y no necesita assets. Si quieres arte
+   propio, basta sustituir el contenido de la casilla en `Shelter.tsx`.
 2. Prueba manual: cambia a mano `lastReconciledDay` en Mongo a hace 3 días,
    recarga `/app` y verifica que descuenta exactamente los días programados.
 
 ### Criterio de aceptación
-- Leer 10 min ⇒ +1 perrito. Seguir hasta 20 min totales ⇒ +3 más (4 en total en
-  el día), no +4 extra.
-- Recargar `/app` cinco veces seguidas no cambia el número de perritos.
+Verificado contra MongoDB y en Chrome:
+
+- Leer 12 min ⇒ `+1`. Seguir hasta 21 min totales ⇒ `+3` más (4 en el día), **no
+  +4 extra**.
+- **Liquidar dos veces la misma sesión devuelve `dogsGained: 0`** y no mueve
+  `dogs` ni `adopted`.
+- Recargar `/app` cinco veces seguidas deja `gameState` y `dailyProgress`
+  **idénticos**.
+- Una sesión de 30 s no toca el refugio ni suma al día.
+- Retrasar `lastReconciledDay` 8 días con compromiso diario aplica las
+  penalizaciones de **dos semanas** con sus dos topes (`W38: −3`, `W39: −3`),
+  deja `dogs` en el piso de 1, marca los 7 días como `missed` en `dailyProgress`
+  —incluido el que ya no pudo penalizar— y **nunca juzga hoy**.
+- El aviso "2 perritos se fueron" con el detalle por día aparece **una vez**; al
+  recargar ya no.
+- Tras leer 20 min la rejilla pasa de `🐶×5 · ·` a `🐶×7` **sin recargar**.
+- Reconciliar de nuevo no añade eventos (8 → 8) ni cambia `dogs`.
 
 ---
 

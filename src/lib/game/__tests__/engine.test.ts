@@ -269,3 +269,37 @@ describe('escenario narrativo del Apéndice B', () => {
     expect(rolled.state.capacity).toBe(7); // faltan 2 adopciones para el +1
   });
 });
+
+describe('reconcile informa del resultado de cada día', () => {
+  it('clasifica cada día como completed, missed o rest', () => {
+    // 2026-09-21 lunes … 2026-09-27 domingo. Compromiso L–V.
+    const s = { ...initialState('2026-W39', '2026-09-20'), lastReconciledDay: '2026-09-20' };
+    const leyo = new Set(['2026-09-21', '2026-09-25']);
+    const r = reconcile(s, '2026-09-28', WEEKDAYS, leyo);
+
+    expect(r.days).toEqual([
+      { dayKey: '2026-09-21', outcome: 'completed' }, // lunes, leyó
+      { dayKey: '2026-09-22', outcome: 'missed' },    // martes programado
+      { dayKey: '2026-09-23', outcome: 'missed' },
+      { dayKey: '2026-09-24', outcome: 'missed' },
+      { dayKey: '2026-09-25', outcome: 'completed' }, // viernes, leyó
+      { dayKey: '2026-09-26', outcome: 'rest' },      // sábado libre
+      { dayKey: '2026-09-27', outcome: 'rest' },      // domingo libre
+    ]);
+  });
+
+  it('un día `missed` sin penalización (tope alcanzado) sigue siendo `missed`', () => {
+    const s = { ...initialState('2026-W39', '2026-09-20'), lastReconciledDay: '2026-09-20' };
+    const r = reconcile(s, '2026-09-28', [1, 2, 3, 4, 5, 6, 7], new Set());
+    const missed = r.days.filter((d) => d.outcome === 'missed');
+    const penalties = r.events.filter((e) => e.type === 'penalty');
+    expect(missed).toHaveLength(7);
+    // El tope semanal corta en 5, pero los 7 días siguen marcados como fallados.
+    expect(penalties).toHaveLength(5);
+  });
+
+  it('no devuelve ningún día cuando no hay nada que reconciliar', () => {
+    const s = { ...initialState('2026-W39', '2026-09-24'), lastReconciledDay: '2026-09-24' };
+    expect(reconcile(s, '2026-09-24', WEEKDAYS, new Set()).days).toEqual([]);
+  });
+});

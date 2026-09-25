@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import Button from '@/components/ui/Button';
+import type { SettleResult } from '@/lib/game/service';
 import { REWARD_STEPS } from '@/lib/game/rewards';
+import { emitShelterUpdate } from '@/lib/shelter-events';
 import type { SessionView } from '@/lib/sessions-view';
 import { formatDuration } from '@/lib/time';
 
@@ -39,7 +41,11 @@ export default function ReadingTimer({
   const [daySeconds, setDaySeconds] = useState(initialDaySeconds);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastResult, setLastResult] = useState<{ counted: boolean; seconds: number } | null>(null);
+  const [lastResult, setLastResult] = useState<{
+    counted: boolean;
+    seconds: number;
+    reward: SettleResult | null;
+  } | null>(null);
 
   const phase = phaseOf(session);
   const running = phase === 'running';
@@ -136,13 +142,26 @@ export default function ReadingTimer({
     if (!id) return;
     setBusy(true);
     const data = (await post('/api/sessions/finish', { sessionId: id })) as
-      | { session: SessionView; counted: boolean; daySeconds: number }
+      | { session: SessionView; counted: boolean; daySeconds: number; reward: SettleResult }
       | null;
     if (data) {
       setSession(null);
       setDisplaySeconds(0);
       setDaySeconds(data.daySeconds);
-      setLastResult({ counted: data.counted, seconds: data.session.elapsedSeconds });
+      setLastResult({
+        counted: data.counted,
+        seconds: data.session.elapsedSeconds,
+        reward: data.reward,
+      });
+
+      // Avisa al refugio, que es otra isla: así los perritos entran animados
+      // sin recargar la página.
+      emitShelterUpdate({
+        shelter: data.reward.shelter,
+        dogsGained: data.reward.dogsGained,
+        adoptedGained: data.reward.adoptedGained,
+        minutesToday: data.reward.minutesToday,
+      });
     }
     setBusy(false);
   }
@@ -241,6 +260,25 @@ export default function ReadingTimer({
             ? `Sesión guardada: ${formatDuration(lastResult.seconds)}.`
             : `Sesión demasiado corta (menos de ${Math.floor(minSessionSeconds / 60)} min): no cuenta.`)}
       </p>
+
+      {lastResult?.reward && lastResult.counted && (
+        <p className="mt-1 text-sm">
+          {lastResult.reward.dogsGained > 0 ? (
+            <span className="font-medium text-primary">
+              +{lastResult.reward.dogsGained}{' '}
+              {lastResult.reward.dogsGained === 1 ? 'perrito' : 'perritos'}
+              {lastResult.reward.adoptedGained > 0 &&
+                ` · ${lastResult.reward.adoptedGained} adoptado${lastResult.reward.adoptedGained === 1 ? '' : 's'}`}
+            </span>
+          ) : lastResult.reward.nextStep ? (
+            <span className="text-text-soft">
+              Te faltan {lastResult.reward.nextStep.minutesAway} min hoy para{' '}
+              {lastResult.reward.nextStep.dogs}{' '}
+              {lastResult.reward.nextStep.dogs === 1 ? 'perrito' : 'perritos'}.
+            </span>
+          ) : null}
+        </p>
+      )}
 
       {error && (
         <p

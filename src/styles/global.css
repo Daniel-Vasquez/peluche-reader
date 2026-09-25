@@ -109,3 +109,11 @@
     }
   }
 }
+
+/* Entrada de un perrito nuevo en el refugio. Se aplica solo con
+   `motion-safe:`, y el bloque de `prefers-reduced-motion` la neutraliza. */
+@keyframes shelter-pop {
+  from { opacity: 0; transform: scale(0.6); }
+  60%  { transform: scale(1.08); }
+  to   { opacity: 1; transform: scale(1); }
+}
