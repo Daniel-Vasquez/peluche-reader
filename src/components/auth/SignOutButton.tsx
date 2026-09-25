@@ -10,6 +10,8 @@ export default function SignOutButton() {
     <Button
       variant="ghost"
       size="sm"
+      // Siempre es un objetivo táctil, así que nunca por debajo de 44 px.
+      className="min-h-11"
       disabled={pending}
       onClick={async () => {
         setPending(true);

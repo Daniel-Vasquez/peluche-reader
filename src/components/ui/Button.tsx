@@ -1,7 +1,7 @@
 import { clsx } from 'clsx';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
-export type ButtonVariant = 'primary' | 'ghost' | 'danger';
+export type ButtonVariant = 'primary' | 'ghost';
 export type ButtonSize = 'sm' | 'md';
 
 interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -14,14 +14,17 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
  * Uso del color (ver el sistema en `src/styles/global.css`):
  *  - `primary` → la acción principal de la pantalla. Solo una.
  *  - `ghost`   → acciones secundarias.
- *  - `danger`  → destructivo o de riesgo. Rosa; como máximo uno por pantalla.
+ *
+ * No hay variante `danger`: existía sin un solo uso, así que nadie la había
+ * visto renderizada ni sabía si sus contrastes aguantaban el tema oscuro. Cuando
+ * haga falta una acción destructiva —un «Eliminar cuenta» en /ajustes—, se añade
+ * entonces y se verifica con ella delante.
  */
 const VARIANTS: Record<ButtonVariant, string> = {
   // `text-on-primary` en vez de `text-white`: en tema oscuro el relleno es un
   // teal claro y el blanco daría 2.49:1. El token ya resuelve cada tema.
   primary: 'bg-primary text-on-primary hover:bg-primary-hover',
   ghost: 'border border-border bg-surface text-text hover:border-primary hover:text-primary',
-  danger: 'border border-alert/40 bg-alert/10 text-alert-text hover:bg-alert/20',
 };
 
 /**

@@ -189,8 +189,14 @@ export default function ScheduleEditor({
     }
   }
 
+  /*
+   * `noValidate`: la validación la hace el componente, como en AuthForm. Los
+   * mensajes nativos del navegador salen en el idioma del sistema, así que un
+   * nombre demasiado corto se explicaba en un idioma distinto al del resto de la
+   * app — y el mensaje propio, en español, no llegaba a verse.
+   */
   return (
-    <form onSubmit={handleSubmit} className="space-y-8">
+    <form onSubmit={handleSubmit} noValidate className="space-y-8">
       <Field
         id="name"
         label="Tu nombre"

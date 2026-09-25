@@ -296,11 +296,23 @@ export default function ReadingTimer({
           </Button>
         ) : (
           <>
+            {/*
+              Cada botón dice su verbo en presente mientras espera al servidor.
+              El color de deshabilitado ya avisa de que no acepta clics, pero no
+              de QUÉ está ocurriendo — y terminar una sesión es la acción con más
+              peso de la app.
+            */}
             <Button variant="ghost" onClick={handleToggle} disabled={busy}>
-              {running ? 'Pausar' : 'Reanudar'}
+              {busy
+                ? running
+                  ? 'Pausando…'
+                  : 'Reanudando…'
+                : running
+                  ? 'Pausar'
+                  : 'Reanudar'}
             </Button>
             <Button onClick={handleFinish} disabled={busy}>
-              Terminar sesión
+              {busy ? 'Guardando…' : 'Terminar sesión'}
             </Button>
           </>
         )}

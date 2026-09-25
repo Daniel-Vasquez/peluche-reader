@@ -44,7 +44,8 @@ export default function ThemeToggle() {
       aria-pressed={isDark}
       aria-label={isDark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}
       title={isDark ? 'Tema claro' : 'Tema oscuro'}
-      className="rounded-full border border-border bg-surface p-2 text-text-soft transition hover:border-primary hover:text-primary"
+      // 44×44: objetivo cómodo para el dedo. Con `p-2` medía 36×36.
+      className="grid h-11 w-11 place-items-center rounded-full border border-border bg-surface text-text-soft transition hover:border-primary hover:text-primary"
     >
       {isDark ? <Sun size={18} aria-hidden /> : <Moon size={18} aria-hidden />}
     </button>
