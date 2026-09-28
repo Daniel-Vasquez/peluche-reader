@@ -2524,3 +2524,5 @@ cumpla su criterio de aceptación. Si una tanda te obliga a modificar código de
 una anterior, hazlo, pero vuelve a validar el criterio de aquella antes de
 continuar. Y ante cualquier duda de balance o de negocio, **pregunta en vez de
 inventar un número**: los valores viven todos en `src/lib/game/config.ts`.
+
+claude --resume 275c8217-9389-47d1-bd24-26095f7872f0

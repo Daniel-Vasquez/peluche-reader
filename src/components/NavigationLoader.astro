@@ -1,0 +1,79 @@
+---
+/**
+ * Loader de pantalla completa durante la navegación entre páginas.
+ *
+ * **Solo en móvil** (`sm:hidden`): en escritorio la navegación de cliente es
+ * casi instantánea y un velo a pantalla completa molestaría más de lo que
+ * informa. En móvil, con la red que suele haber, la espera sí se nota.
+ *
+ * Se controla con el atributo `hidden`, no con clases: el preflight de Tailwind
+ * lo marca como `display:none !important`, así que gana a `flex` sin depender
+ * del orden de la cascada.
+ *
+ * `z-[60]`, no `z-50`: la cabecera es `sticky z-50` y va después en el DOM, así
+ * que con el mismo índice quedaría por encima del velo y sus enlaces seguirían
+ * siendo clicables durante la carga. Comprobado: sin esto, «Salir» y los enlaces
+ * de navegación respondían al clic con el loader puesto.
+ */
+---
+
+<div
+  id="nav-loader"
+  hidden
+  role="status"
+  aria-live="polite"
+  class="fixed inset-0 z-[60] flex items-center justify-center bg-base/90 backdrop-blur-sm sm:hidden"
+>
+  {/*
+    Colores por token: `border-border` para el aro y `border-t-text` para el
+    trazo que gira. Ambos se invierten solos con el tema, así que no hace falta
+    ninguna variante `dark:`.
+  */}
+  <span
+    aria-hidden="true"
+    class="h-9 w-9 animate-spin rounded-full border-[3px] border-border border-t-text"
+  ></span>
+  <span class="sr-only">Cargando…</span>
+</div>
+
+<script is:inline>
+  (() => {
+    const ID = 'nav-loader';
+    /**
+     * Retraso antes de mostrarlo: en una navegación rápida el velo aparecería y
+     * desaparecería en un parpadeo, que se percibe peor que no mostrar nada.
+     */
+    const RETRASO_MS = 150;
+    let temporizador;
+
+    const mostrar = () => {
+      clearTimeout(temporizador);
+      temporizador = setTimeout(() => {
+        document.getElementById(ID)?.removeAttribute('hidden');
+      }, RETRASO_MS);
+    };
+
+    const ocultar = () => {
+      clearTimeout(temporizador);
+      document.getElementById(ID)?.setAttribute('hidden', '');
+    };
+
+    /*
+     * `before-preparation` es el comienzo real de la navegación: se dispara
+     * ANTES de pedir la página nueva. `before-swap` llegaría cuando la descarga
+     * ya terminó, es decir, justo cuando la espera se acabó.
+     */
+    document.addEventListener('astro:before-preparation', mostrar);
+    document.addEventListener('astro:page-load', ocultar);
+
+    /*
+     * El swap reemplaza el body, así que el loader que se muestra pertenece al
+     * documento saliente. Se oculta también aquí por si `page-load` no llegara
+     * (una navegación cancelada, por ejemplo).
+     */
+    document.addEventListener('astro:after-swap', ocultar);
+
+    // Navegación fuera del router (enlaces externos, cerrar sesión).
+    window.addEventListener('pagehide', ocultar);
+  })();
+</script>

@@ -1,5 +1,6 @@
 ---
 import { ClientRouter } from 'astro:transitions';
+import NavigationLoader from '@/components/NavigationLoader.astro';
 import '@/styles/global.css';
 
 interface Props {
@@ -60,6 +61,7 @@ const fullTitle = title === appName ? title : `${title} · ${appName}`;
     </script>
   </head>
   <body class="min-h-dvh bg-base text-text antialiased">
+    <NavigationLoader />
     <slot />
   </body>
 </html>
