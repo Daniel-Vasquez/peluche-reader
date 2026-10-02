@@ -261,6 +261,24 @@ Las diez tandas del plan están completas.
 El plan técnico completo, con el detalle de cada tanda y las trampas encontradas
 al ejecutarlas, está en [`planificacion.md`](./planificacion.md).
 
+## Siguiente: sistema multi-objetivo
+
+La **Parte II** del plan (tandas A–E, por ejecutar) convierte la app de tracker de
+lectura en un sistema de objetivos independientes —**Lectura, Inglés y Estudio**—,
+cada uno con sus días comprometidos, sus metadatos y su propio refugio de
+perritos.
+
+- [ ] **Tanda A** · Refactorización del esquema: colección `goals` y `goalId` en
+      todas las colecciones de datos, con script de migración
+- [ ] **Tanda B** · Backend por objetivo: `userId` → `GoalRef` en los repos
+- [ ] **Tanda C** · «Vista de Hoy» en `/app` y cronómetro en `/sesion/[goalId]`
+- [ ] **Tanda D** · `/progreso` por pestañas y `/ajustes` por acordeones
+- [ ] **Tanda E** · Archivado de objetivos, semilla multi-objetivo y limpieza
+
+El motor de gamificación **no cambia**: es puro y opera sobre un `GameState`, así
+que varios objetivos son varios estados. El [Apéndice D](./planificacion.md) lista
+qué código se conserva y cuál se reescribe.
+
 ### Ideas para después
 
 - Cambiar el aforo inicial para que la primera recompensa se vea en la rejilla: hoy

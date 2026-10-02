@@ -9,6 +9,10 @@
 > [`README.md`](./README.md). Este documento describe el destino; el README dice
 > por dónde va el camino.
 >
+> El documento tiene **dos partes**. La **Parte I** (tandas 0–9) construye el
+> tracker de lectura y está terminada. La **Parte II** (tandas A–E) lo convierte
+> en un sistema multi-objetivo —Lectura, Inglés y Estudio— y está por ejecutar.
+>
 > Los bloques de código son los **reales del proyecto**, no bocetos: cada tanda
 > se sincronizó con la implementación al terminarla, incluidas las trampas que
 > aparecieron al ejecutarla.
@@ -2427,6 +2431,1081 @@ Checklist antes de publicar:
 - Registro, sesión de lectura y `/progreso` funcionando en producción; los
   perritos persisten tras cerrar el navegador.
 
+
+---
+
+# PARTE II · De tracker de lectura a sistema multi-objetivo
+
+Las tandas 0–9 construyeron una app de un solo hábito. Esta parte la convierte en
+un sistema de **objetivos independientes**: Lectura, Inglés y Estudio, cada uno
+con sus días comprometidos, sus metadatos, su refugio y sus perritos.
+
+## II.0 La decisión que gobierna todo lo demás
+
+**Cada objetivo es una fila, no un campo.** Toda la refactorización se reduce a
+añadir una dimensión —`goalId`— a las claves que hoy son solo `userId`.
+
+| Hoy | Después |
+|---|---|
+| `gameState` 1 por usuario | 1 por **(usuario, objetivo)** |
+| `dailyProgress` 1 por (usuario, día) | 1 por **(usuario, objetivo, día)** |
+| `profiles.scheduledDays` | `goals.scheduledDays`, uno por objetivo |
+
+### Por qué una colección `goals` y no un array de subdocumentos en `profiles`
+
+Es la pregunta central del diseño y conviene zanjarla antes de escribir código.
+
+Un array `profile.goals[]` parece más simple, pero rompe en tres sitios:
+
+1. **Unicidad.** El índice `(userId, goalId, dayKey)` único sobre `dailyProgress`
+   es lo que hace seguro el `upsert` concurrente de `addSessionToDay`. Dentro de
+   un array no existe tal índice: habría que hacer actualizaciones posicionales
+   (`goals.$[g].days.$[d]`) que **no pueden garantizar unicidad** ni crear el
+   elemento si falta, en la misma operación atómica.
+2. **Crecimiento sin techo.** Un documento de MongoDB tope en **16 MB**. Las
+   sesiones y los eventos de un usuario crecen cada día; metidos en el documento
+   de perfil, la app se rompe sola a los pocos años.
+3. **Consultas.** El dashboard pregunta «qué objetivos tocan hoy» y `/progreso`
+   pide rangos por objetivo. Con documentos planos son consultas indexadas; con
+   arrays son `$filter` en memoria sobre todo el perfil.
+
+**Decisión: colección `goals`, un documento por (usuario, objetivo), y un campo
+`goalId` en cada colección de datos.** Añadir un cuarto tipo de objetivo pasa a
+ser insertar una fila, sin tocar el esquema.
+
+---
+
+# TANDA A · Refactorización del esquema
+
+### Objetivo
+Introducir la dimensión `goalId` en el modelo de datos y migrar los datos
+existentes sin perder nada. **Al terminar esta tanda la app sigue funcionando
+igual que antes**: un solo objetivo de lectura, pero ya expresado en el esquema
+nuevo.
+
+### ⚠️ Advertencia de alcance
+
+Esta tanda **modifica extensamente** tres archivos y rompe la firma de casi todos
+los repositorios:
+
+| Archivo | Qué le pasa |
+|---|---|
+| `src/lib/db/types.ts` | se parte en dos: tipos de objetivo + tipos de datos |
+| `scripts/db-init.ts` | **todos** los índices cambian de clave |
+| `src/lib/repos/*.ts` | todas las funciones pasan de `userId` a `GoalRef` |
+
+No intentes hacerla a medias: un índice único viejo (`userId_1_dayKey_1` en
+`dailyProgress`) **impediría** insertar el segundo objetivo del mismo día y el
+fallo saldría en producción, no en los tests.
+
+### A.1 Tipos de objetivo — `src/lib/db/types.ts`
+
+```ts
+/** Los tres objetivos del sistema. Añadir uno es añadir un valor aquí. */
+export type GoalType = 'reading' | 'english' | 'study';
+
+/**
+ * Metadatos propios de cada tipo, como unión discriminada.
+ *
+ * Es lo que permite que "Inglés" guarde un curso y "Estudio" una materia sin
+ * que ninguno de los dos tenga campos vacíos del otro. TypeScript obliga a
+ * comprobar `type` antes de leer cualquier campo, así que un formulario no
+ * puede escribir `courseName` en un objetivo de lectura.
+ */
+export type GoalMetadata =
+  | { type: 'reading'; bookTitle: string | null; author: string | null }
+  | { type: 'english'; courseName: string | null; level: string | null }
+  | { type: 'study'; subject: string | null; topic: string | null };
+
+export interface GoalDoc {
+  userId: string;
+  /**
+   * Slug estable y único por usuario (`reading`, `english`, `study`, o
+   * `study-2` si el usuario crea un segundo). Es la clave de TODO lo demás:
+   * nunca se reutiliza ni se renombra, porque hay sesiones apuntando a él.
+   */
+  goalId: string;
+  type: GoalType;
+  /** Nombre visible, editable: "Inglés", "Cálculo II". */
+  label: string;
+  /** Días comprometidos de ESTE objetivo. ISO 1..7. */
+  scheduledDays: IsoWeekday[];
+  dailyGoalMinutes: number;
+  metadata: GoalMetadata;
+  /** Orden en la Vista de Hoy. */
+  order: number;
+  /** Archivar en vez de borrar: las sesiones pasadas siguen teniendo sentido. */
+  archivedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** Cómo se identifica un objetivo en toda la capa de datos. */
+export interface GoalRef {
+  userId: string;
+  goalId: string;
+}
+```
+
+### A.2 `ProfileDoc` adelgaza
+
+Se queda **solo con lo que es del usuario**, no del objetivo:
+
+```diff
+ export interface ProfileDoc {
+   userId: string;
+   timezone: string;
+-  scheduledDays: IsoWeekday[];      // → GoalDoc.scheduledDays
+-  dailyGoalMinutes: number;         // → GoalDoc.dailyGoalMinutes
+-  currentBookTitle: string | null;  // → GoalDoc.metadata.bookTitle
+   onboardedAt: Date | null;
+   createdAt: Date;
+   updatedAt: Date;
+ }
+```
+
+### A.3 Las colecciones de datos ganan `goalId`
+
+```diff
+ export interface DailyProgressDoc {
+   userId: string;
++  goalId: string;
+   dayKey: string;
+   …
+ }
+
+-export interface ReadingSessionDoc {
++export interface SessionDoc {
+   userId: string;
++  goalId: string;
+   dayKey: string;
+-  bookTitle: string | null;
++  /** Instantánea del metadato al abrir la sesión: si el usuario cambia de
++   *  libro o de tema, las sesiones viejas conservan el suyo. */
++  contextLabel: string | null;
+   …
+ }
+
+ export interface GameStateDoc {
+   userId: string;
++  goalId: string;
+   dogs: number;
+   …
+ }
+
+ export interface GameEventDoc {
+   userId: string;
++  goalId: string;
+   dayKey: string;
+   …
+ }
+```
+
+> **`readingSessions` se renombra a `sessions`.** El nombre mentía en cuanto
+> existe un objetivo que no es lectura. Es un `renameCollection` en la migración,
+> no una copia.
+
+### A.4 Índices — `scripts/db-init.ts`
+
+**Todos** los índices con `userId` pasan a llevar `goalId`. Los viejos hay que
+**borrarlos**, no solo dejar de usarlos:
+
+```ts
+// Un objetivo por (usuario, slug).
+await db.collection('goals').createIndex({ userId: 1, goalId: 1 }, { unique: true });
+// La Vista de Hoy pregunta por objetivos activos de un usuario.
+await db.collection('goals').createIndex({ userId: 1, archivedAt: 1, order: 1 });
+
+// Clave del agregado diario. SIN goalId, dos objetivos del mismo día chocan.
+await db.collection('dailyProgress')
+  .createIndex({ userId: 1, goalId: 1, dayKey: 1 }, { unique: true });
+await db.collection('dailyProgress').createIndex({ userId: 1, goalId: 1, weekKey: 1 });
+
+await db.collection('gameState').createIndex({ userId: 1, goalId: 1 }, { unique: true });
+await db.collection('sessions').createIndex({ userId: 1, goalId: 1, dayKey: 1 });
+// Solo puede haber UNA sesión abierta por usuario, aunque tenga varios objetivos:
+// nadie lee y estudia a la vez. El índice parcial lo garantiza.
+await db.collection('sessions').createIndex(
+  { userId: 1 },
+  { unique: true, partialFilterExpression: { status: { $in: ['running', 'paused'] } } },
+);
+await db.collection('gameEvents').createIndex({ userId: 1, goalId: 1, createdAt: -1 });
+```
+
+> El índice parcial sobre `sessions` convierte en regla de la base de datos algo
+> que hoy solo vigila el código (`findOpenSession`). Con varios objetivos, dos
+> pestañas abiertas en objetivos distintos podrían arrancar dos cronómetros a la
+> vez; esto lo impide.
+
+### A.5 Migración — `scripts/db-migrate-goals.ts`
+
+Script **idempotente** y protegido, igual que `db:reset`. Crea el objetivo de
+lectura de cada usuario a partir de su perfil y estampa `goalId` en lo que ya
+existe.
+
+```ts
+import 'dotenv/config';
+import { closeMongoClient, getDb } from '@/lib/db/client';
+
+const READING_GOAL_ID = 'reading';
+
+async function main(): Promise<void> {
+  const db = await getDb();
+  const profiles = await db.collection('profiles').find({}).toArray();
+
+  for (const profile of profiles) {
+    const { userId } = profile;
+
+    // 1. Un objetivo de lectura por usuario, con lo que hoy vive en el perfil.
+    await db.collection('goals').updateOne(
+      { userId, goalId: READING_GOAL_ID },
+      {
+        $setOnInsert: {
+          userId,
+          goalId: READING_GOAL_ID,
+          type: 'reading',
+          label: 'Lectura',
+          scheduledDays: profile.scheduledDays ?? [1, 2, 3, 4, 5],
+          dailyGoalMinutes: profile.dailyGoalMinutes ?? 10,
+          metadata: {
+            type: 'reading',
+            bookTitle: profile.currentBookTitle ?? null,
+            author: null,
+          },
+          order: 0,
+          archivedAt: null,
+          createdAt: profile.createdAt ?? new Date(),
+          updatedAt: new Date(),
+        },
+      },
+      { upsert: true },
+    );
+
+    // 2. Estampar goalId en los datos que ya existen. `$exists: false` hace el
+    //    script repetible: lo ya migrado no se vuelve a tocar.
+    for (const name of ['dailyProgress', 'gameState', 'gameEvents', 'sessions']) {
+      await db.collection(name).updateMany(
+        { userId, goalId: { $exists: false } },
+        { $set: { goalId: READING_GOAL_ID } },
+      );
+    }
+  }
+
+  // 3. Limpiar el perfil y los índices viejos.
+  await db.collection('profiles').updateMany(
+    {},
+    { $unset: { scheduledDays: '', dailyGoalMinutes: '', currentBookTitle: '' } },
+  );
+  for (const [coleccion, indice] of [
+    ['dailyProgress', 'userId_1_dayKey_1'],
+    ['dailyProgress', 'userId_1_weekKey_1'],
+    ['gameState', 'userId_1'],
+    ['gameEvents', 'userId_1_createdAt_-1'],
+  ] as const) {
+    await db.collection(coleccion).dropIndex(indice).catch(() => {});
+  }
+}
+```
+
+**Orden de ejecución, y no es negociable:**
+
+```bash
+node --env-file=.env scripts/rename-sessions.ts   # readingSessions → sessions
+npm run db:migrate                                 # estampa goalId y limpia
+npm run db:init                                    # crea los índices nuevos
+```
+
+`db:init` **después** de la migración: crear el índice único
+`(userId, goalId, dayKey)` sobre documentos que aún no tienen `goalId` falla,
+porque todos valdrían `null` y colisionarían entre sí.
+
+### Qué necesito de tu lado
+1. Hacer **copia de seguridad de la base** antes de migrar (`mongodump`). La
+   migración es idempotente, pero un `dropIndex` no se deshace solo.
+2. Ejecutar los tres comandos en ese orden y pegarme la salida.
+
+### Criterio de aceptación
+- `goals` tiene un documento `reading` por cada perfil existente, con los
+  `scheduledDays` que tenía el usuario.
+- Ningún documento de `dailyProgress`, `gameState`, `gameEvents` o `sessions`
+  queda sin `goalId`: `countDocuments({ goalId: { $exists: false } }) === 0`.
+- `db.collection('dailyProgress').indexes()` ya **no** contiene
+  `userId_1_dayKey_1`.
+- Volver a ejecutar la migración no cambia ningún documento (compara
+  `updatedAt` antes y después).
+- `npm run typecheck` pasa: los tipos nuevos obligan a tocar los repos, que es
+  justo la Tanda B.
+
+---
+
+# TANDA B · Backend y endpoints por objetivo
+
+### Objetivo
+Que toda la lógica —perritos, tiempos, reconciliación— opere sobre un
+`GoalRef` en vez de sobre un `userId`, y exponer los endpoints que la UI
+necesitará.
+
+### ⚠️ El motor NO cambia (casi)
+
+Buena noticia arquitectónica: `game/engine.ts`, `rewards.ts` y `penalties.ts`
+son **puros y agnósticos**. Reciben un `GameState` y devuelven otro; les da igual
+si ese estado es de lectura o de inglés. **Los 45 tests siguen valiendo tal cual.**
+
+La única excepción son las cadenas en español que el motor incrusta en los
+eventos:
+
+```ts
+reason: 'Día programado sin lectura',
+reason: `${action.minutesToday} min de lectura`,
+```
+
+Eso sí es específico de lectura. Se resuelve **inyectando el vocabulario**, sin
+convertir el motor en un sistema de i18n:
+
+```ts
+/** Textos que dependen del objetivo. Los aporta quien llama. */
+export interface GoalVocabulary {
+  /** "de lectura", "de inglés", "de estudio". */
+  activity: string;
+  /** "Día programado sin leer", "Día programado sin practicar". */
+  missed: string;
+}
+
+export function applyAction(
+  state: GameState,
+  action: GameAction,
+  vocab: GoalVocabulary,
+): ApplyResult { … }
+```
+
+> **Por qué inyectar y no devolver claves.** La alternativa —que el motor emita
+> `reasonKey: 'reward'` y la UI lo traduzca— es más pura, pero obligaría a
+> migrar los `gameEvents` ya guardados, que almacenan `reason` como texto. La
+> inyección mantiene el historial existente legible sin tocarlo.
+
+### B.1 Repositorios: `userId` → `GoalRef`
+
+El cambio es mecánico y afecta a **todas** las funciones listadas en la Tanda 7:
+
+```diff
+-export async function addSessionToDay(
+-  userId: string,
+-  dayKey: string,
+-  seconds: number,
+-  scheduled: boolean,
+-): Promise<WithId<DailyProgressDoc>> {
++export async function addSessionToDay(
++  ref: GoalRef,
++  dayKey: string,
++  seconds: number,
++  scheduled: boolean,
++): Promise<WithId<DailyProgressDoc>> {
+   const progress = await col.dailyProgress();
+   const result = await progress.findOneAndUpdate(
+-    { userId, dayKey },
++    { ...ref, dayKey },
+     {
+       $inc: { totalSeconds: seconds, sessionsCount: 1 },
+       $set: { weekKey: weekKeyFromDayKey(dayKey), scheduled, updatedAt: new Date() },
+       $setOnInsert: { dogsAwarded: 0, outcome: 'pending' satisfies DayOutcome },
+     },
+     { upsert: true, returnDocument: 'after' },
+   );
+```
+
+Pasar el objeto `ref` entero y expandirlo con `...ref` en el filtro evita el
+error más probable de toda la refactorización: **olvidar el `goalId` en un
+filtro**, que no da error y silenciosamente mezcla los datos de dos objetivos.
+
+> **Comprobación mecánica**: tras la tanda, ningún filtro de `dailyProgress`,
+> `gameState` ni `gameEvents` debe llevar `userId` sin `goalId`.
+>
+> ```bash
+> grep -rn "{ userId" src/lib/repos/progress.ts src/lib/repos/gameState.ts \
+>                     src/lib/repos/summary.ts
+> # Debe quedar vacío. Hoy devuelve 13 coincidencias: esa es la línea base.
+> ```
+>
+> **Tres sitios conservan `{ userId }` a propósito** y no son un olvido:
+>
+> | Función | Por qué sigue siendo por usuario |
+> |---|---|
+> | `findOpenSession` | solo puede haber **una** sesión abierta en toda la cuenta |
+> | `abandonStaleSessions` | cierra las abandonadas de cualquier objetivo |
+> | `profile.ts` (entero) | zona horaria y onboarding son del usuario, no del objetivo |
+
+### B.2 `src/lib/repos/goals.ts` (nuevo)
+
+```ts
+/** Objetivos activos del usuario, en el orden en que se muestran. */
+export async function listGoals(userId: string): Promise<WithId<GoalDoc>[]> {
+  return (await col.goals())
+    .find({ userId, archivedAt: null })
+    .sort({ order: 1 })
+    .toArray();
+}
+
+/** Los que tocan HOY, que es lo que pinta la Vista de Hoy. */
+export async function goalsForToday(
+  userId: string,
+  weekday: IsoWeekday,
+): Promise<WithId<GoalDoc>[]> {
+  return (await col.goals())
+    .find({ userId, archivedAt: null, scheduledDays: weekday })
+    .sort({ order: 1 })
+    .toArray();
+}
+
+export async function findGoal(ref: GoalRef): Promise<WithId<GoalDoc> | null> {
+  return (await col.goals()).findOne(ref);
+}
+
+/** Crea los tres objetivos de una cuenta nueva. Idempotente. */
+export async function ensureDefaultGoals(userId: string): Promise<void> { … }
+```
+
+> `scheduledDays: weekday` sobre un array hace *array-contains* en MongoDB: no
+> hace falta `$elemMatch` ni `$in` para un solo valor.
+
+### B.3 `game/service.ts`: de un objetivo a varios
+
+```ts
+/** Reconcilia UN objetivo. Es la pieza que ya existía, con `ref` en vez de id. */
+export async function syncGoal(ref: GoalRef, now = new Date()): Promise<GoalSnapshot>;
+
+/**
+ * Reconcilia TODOS los objetivos activos del usuario.
+ *
+ * Lo llaman los frontmatter de /app y /progreso. Las penalizaciones de inglés no
+ * pueden depender de que el usuario abra la pestaña de inglés.
+ */
+export async function syncAllGoals(userId: string, now = new Date()): Promise<GoalSnapshot[]>;
+
+/** Liquida una sesión contra el objetivo al que pertenece. */
+export async function settleSession(
+  session: WithId<SessionDoc>,
+  now = new Date(),
+): Promise<SettleResult>;
+```
+
+**`settleSession` ya no recibe `userId`**: el `SessionDoc` trae `userId` y
+`goalId`, y tomarlos de ahí elimina la posibilidad de liquidar una sesión contra
+el objetivo equivocado.
+
+### B.4 Endpoints
+
+| Ruta | Método | Cambio |
+|---|---|---|
+| `/api/goals` | `GET` | lista los objetivos con su configuración |
+| `/api/goals/[goalId]` | `PATCH` | días, meta y metadatos de **un** objetivo |
+| `/api/sessions/start` | `POST` | **ahora exige `goalId`** en el cuerpo |
+| `/api/sessions/heartbeat` | `POST` | sin cambios (el `sessionId` ya identifica el objetivo) |
+| `/api/sessions/finish` | `POST` | sin cambios en la firma; liquida contra el objetivo de la sesión |
+| `/api/progress/summary` | `GET` | **ahora exige `?goalId=`**, o devuelve todos con `?all=1` |
+
+El `PATCH` de metadatos valida **según el tipo**, con una unión discriminada de
+Zod que refleja la del modelo:
+
+```ts
+const MetadataSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('reading'),
+    bookTitle: z.string().max(160).nullable(),
+    author: z.string().max(120).nullable(),
+  }),
+  z.object({
+    type: z.literal('english'),
+    courseName: z.string().max(160).nullable(),
+    level: z.string().max(40).nullable(),
+  }),
+  z.object({
+    type: z.literal('study'),
+    subject: z.string().max(120).nullable(),
+    topic: z.string().max(160).nullable(),
+  }),
+]);
+
+// El tipo del cuerpo DEBE coincidir con el del objetivo guardado: si no,
+// un PATCH podría convertir un objetivo de lectura en uno de inglés.
+if (parsed.data.metadata && parsed.data.metadata.type !== goal.type) {
+  return badRequest('Los metadatos no corresponden al tipo de este objetivo.');
+}
+```
+
+### B.5 El cronómetro ya no asume lectura
+
+`start.ts` toma el metadato del objetivo para la instantánea de contexto:
+
+```ts
+const goal = await findGoal({ userId: locals.user.id, goalId });
+if (!goal) return notFound('No encontramos ese objetivo.');
+
+const contextLabel =
+  goal.metadata.type === 'reading' ? goal.metadata.bookTitle
+  : goal.metadata.type === 'english' ? goal.metadata.courseName
+  : goal.metadata.subject;
+```
+
+### Qué necesito de tu lado
+Nada. Prueba que iniciar una sesión en dos objetivos distintos el mismo día
+produce **dos** documentos en `dailyProgress` y **dos** refugios distintos.
+
+### Criterio de aceptación
+- Leer 20 min en Lectura y 20 min en Inglés el mismo día da **4 perritos a cada
+  refugio**, no 8 a uno.
+- Fallar un día programado de Inglés **no** descuenta perritos de Lectura.
+- `grep -rn "{ userId" src/lib/repos/{progress,gameState,summary}.ts` queda
+  **vacío** (hoy da 13 coincidencias).
+- Los 45 tests del motor siguen pasando **sin modificarlos**, salvo el parámetro
+  `vocab` añadido a `applyAction`.
+- Intentar abrir una segunda sesión con otra ya corriendo devuelve la existente
+  (lo garantiza ahora el índice parcial, no solo el código).
+
+---
+
+# TANDA C · Vista de Hoy y ruteo al cronómetro
+
+### Objetivo
+Convertir `/app` en un panel que muestra **solo los objetivos que tocan hoy**, y
+mover el cronómetro a su propia ruta por objetivo.
+
+### ⚠️ Advertencia de alcance
+
+`src/pages/app.astro` se **reescribe entero** y `ReadingTimer.tsx` se renombra y
+se desacopla de la lectura. Son los dos archivos con más vocabulario específico
+de la app actual.
+
+### C.1 El ruteo cambia de forma
+
+```
+ANTES                          DESPUÉS
+/app   cronómetro + refugio    /app             Vista de Hoy (lista de objetivos)
+                               /sesion/[goalId] cronómetro + refugio de ESE objetivo
+```
+
+Separar las dos pantallas no es cosmético:
+
+- La Vista de Hoy es **ojeable**: se entra, se ve qué queda y se sale.
+- La sesión es **de foco**: una sola cosa en pantalla, sin nada que distraiga
+  mientras corre el cronómetro.
+
+Meterlo todo en `/app` obligaría a elegir un objetivo "activo" y a gestionar ese
+estado; con una ruta por objetivo, el estado es la URL.
+
+### C.2 Estructura de componentes
+
+```
+src/pages/app.astro                 Vista de Hoy (servidor)
+└── components/today/
+    ├── TodayList.astro             rejilla de tarjetas, cero JS
+    ├── GoalCard.astro              una tarjeta por objetivo
+    └── TodayEmpty.astro            día sin objetivos programados
+
+src/pages/sesion/[goalId].astro     pantalla de sesión (servidor)
+├── components/SessionTimer.tsx     antes ReadingTimer, ahora agnóstico
+└── components/Shelter.tsx          sin cambios de lógica, solo de copy
+```
+
+### C.3 Props: el contrato de la tarjeta
+
+```ts
+/** Lo que la Vista de Hoy necesita saber de un objetivo. Lo arma el servidor. */
+export interface TodayGoalView {
+  goalId: string;
+  type: GoalType;
+  /** "Lectura", "Inglés", "Cálculo II". */
+  label: string;
+  /** Metadato ya resuelto a texto: el libro, el curso o el tema. */
+  context: string | null;
+  dailyGoalMinutes: number;
+
+  /** Progreso de HOY en este objetivo. */
+  today: {
+    minutes: number;
+    dogsAwarded: number;
+    /** `true` si ya alcanzó el umbral de recompensa. */
+    completed: boolean;
+  };
+
+  /** Estado del refugio, para el resumen de la tarjeta. */
+  shelter: { dogs: number; capacity: number; streak: number };
+
+  /** `true` si hay una sesión abierta de ESTE objetivo. */
+  hasOpenSession: boolean;
+}
+```
+
+> **La tarjeta recibe datos ya resueltos, no el `GoalDoc` crudo.** El metadato se
+> colapsa a un `context: string | null` en el servidor, así que la tarjeta no
+> necesita un `switch` sobre el tipo. Añadir un cuarto tipo de objetivo no toca
+> ni un componente de UI.
+
+### C.4 `app.astro` — la Vista de Hoy
+
+```astro
+---
+import AppLayout from '@/layouts/AppLayout.astro';
+import TodayList from '@/components/today/TodayList.astro';
+import TodayEmpty from '@/components/today/TodayEmpty.astro';
+import { syncAllGoals } from '@/lib/game/service';
+import { buildTodayView } from '@/lib/today-view';
+import { ensureProfile } from '@/lib/repos/profile';
+import { firstName } from '@/lib/name';
+import { dayKey, isoWeekday } from '@/lib/time';
+
+export const prerender = false;
+
+const user = Astro.locals.user!;
+const profile = await ensureProfile(user.id);
+const now = new Date();
+
+// Reconcilia TODOS los objetivos: las penalizaciones de inglés no pueden
+// depender de que el usuario entre a la pestaña de inglés.
+await syncAllGoals(user.id, now);
+
+const todayKey = dayKey(now, profile.timezone);
+const weekday = isoWeekday(now, profile.timezone);
+const goals = await buildTodayView(user.id, weekday, todayKey);
+
+const pendientes = goals.filter((g) => !g.today.completed);
+---
+
+<AppLayout
+  title="Hoy"
+  heading={`Hola, ${firstName(user.name)}`}
+  subheading={
+    goals.length === 0
+      ? 'Hoy no te comprometiste a nada. Descansa.'
+      : pendientes.length === 0
+        ? '¡Todo hecho por hoy!'
+        : `Te quedan ${pendientes.length} de ${goals.length}.`
+  }
+>
+  {goals.length === 0 ? <TodayEmpty /> : <TodayList goals={goals} />}
+</AppLayout>
+```
+
+### C.5 `GoalCard.astro` — la tarjeta y su CTA
+
+Componente **Astro, no React**: es un enlace con datos del servidor, no necesita
+estado. Cero JavaScript.
+
+```astro
+---
+import type { TodayGoalView } from '@/lib/today-view';
+import GoalIcon from '@/components/icons/GoalIcon.astro';
+
+interface Props { goal: TodayGoalView; }
+const { goal } = Astro.props;
+
+const progreso = Math.min(1, goal.today.minutes / goal.dailyGoalMinutes);
+// El CTA dice lo que va a pasar, y cambia si hay una sesión a medias.
+const cta = goal.hasOpenSession
+  ? 'Retomar sesión'
+  : goal.today.completed
+    ? 'Seguir sumando'
+    : 'Empezar sesión';
+---
+
+<article class="rounded-card border border-border bg-surface p-5">
+  <div class="flex items-start gap-3">
+    <GoalIcon type={goal.type} />
+    <div class="min-w-0 grow">
+      <h3 class="font-semibold">{goal.label}</h3>
+      {goal.context && (
+        <p class="truncate text-sm text-text-soft">{goal.context}</p>
+      )}
+    </div>
+    {goal.today.completed && (
+      <span class="shrink-0 text-sm font-medium text-primary">
+        <span aria-hidden>✓</span> Hecho
+      </span>
+    )}
+  </div>
+
+  {/* Medidor: una razón contra un límite, no una gráfica. */}
+  <div
+    role="meter"
+    aria-valuenow={goal.today.minutes}
+    aria-valuemin={0}
+    aria-valuemax={goal.dailyGoalMinutes}
+    aria-label={`${goal.label}: ${goal.today.minutes} de ${goal.dailyGoalMinutes} minutos`}
+    class="mt-4 h-2 w-full overflow-hidden rounded-full bg-muted"
+  >
+    <div class="h-full rounded-full bg-primary" style={`width:${progreso * 100}%`}></div>
+  </div>
+
+  <div class="mt-4 flex items-center justify-between gap-3">
+    <p class="text-sm text-text-soft tabular-nums">
+      {goal.today.minutes} / {goal.dailyGoalMinutes} min · {goal.shelter.dogs} 🐶
+    </p>
+    <a
+      href={`/sesion/${goal.goalId}`}
+      class="min-h-11 rounded-card bg-primary px-4 py-2.5 text-sm font-medium text-on-primary transition hover:bg-primary-hover"
+    >
+      {cta}
+    </a>
+  </div>
+</article>
+```
+
+> El CTA es **un enlace**, no un botón con `onClick`. Así funciona con el
+> ClientRouter, con «abrir en pestaña nueva» y sin JavaScript.
+
+### C.6 `sesion/[goalId].astro` — la pantalla de foco
+
+```astro
+---
+const { goalId } = Astro.params;
+const user = Astro.locals.user!;
+
+const goal = await findGoal({ userId: user.id, goalId: goalId! });
+// Un objetivo ajeno o inexistente es indistinguible: no se filtra que exista.
+if (!goal) return Astro.redirect('/app', 302);
+
+const snapshot = await syncGoal({ userId: user.id, goalId: goal.goalId }, now);
+const openSession = await findOpenSession(user.id);
+
+// Una sesión abierta de OTRO objetivo: no se puede leer y estudiar a la vez.
+const sesionDeOtroObjetivo =
+  openSession !== null && openSession.goalId !== goal.goalId;
+---
+```
+
+Ese último caso es nuevo y hay que resolverlo en la interfaz, no ignorarlo: si
+hay un cronómetro corriendo en Inglés y el usuario entra a la sesión de Lectura,
+la pantalla muestra un aviso con un enlace a la sesión en curso, en vez de un
+botón de *Empezar* que fallaría.
+
+### C.7 `ReadingTimer` → `SessionTimer`
+
+El componente pierde todo rastro de lectura:
+
+```diff
+ interface Props {
+   initialSession: SessionView | null;
+-  bookTitle: string | null;
++  /** Libro, curso o tema: ya resuelto a texto por el servidor. */
++  contextLabel: string | null;
++  goalId: string;
++  goalLabel: string;
+   dailyGoalMinutes: number;
+   minSessionSeconds: number;
+   initialDaySeconds: number;
+ }
+```
+
+Y `handleStart` manda el objetivo:
+
+```diff
+-const data = await post('/api/sessions/start', { bookTitle });
++const data = await post('/api/sessions/start', { goalId });
+```
+
+> El `bookTitle` ya no viaja desde el cliente: el servidor lo toma del objetivo.
+> Un cliente no debería poder decidir con qué contexto se guarda una sesión.
+
+### Qué necesito de tu lado
+Decidir los **iconos** de cada objetivo (`GoalIcon.astro`). Propuesta, siguiendo
+los de Lucide que ya usa la navegación: `book-open` (Lectura), `languages`
+(Inglés), `graduation-cap` (Estudio).
+
+### Criterio de aceptación
+- Con Lectura los lunes e Inglés los martes, el lunes `/app` muestra **una**
+  tarjeta y el martes **otra distinta**.
+- Un día sin objetivos programados muestra `TodayEmpty`, no una lista vacía.
+- El CTA lleva a `/sesion/reading`, y esa pantalla arranca el cronómetro de ese
+  objetivo.
+- `/sesion/no-existe` redirige a `/app` sin filtrar si el objetivo existe.
+- Con una sesión corriendo en un objetivo, entrar a otro muestra el aviso y **no**
+  ofrece *Empezar*.
+- `/app` no carga JavaScript de tarjetas: son componentes Astro.
+
+---
+
+# TANDA D · Progreso por pestañas y Ajustes por acordeones
+
+### Objetivo
+Que `/progreso` y `/ajustes` escalen a N objetivos sin convertirse en una pared
+de contenido.
+
+### ⚠️ Advertencia de alcance
+
+`progreso.astro` y `ajustes.astro` se **reescriben**, y `ScheduleEditor.tsx` se
+parte en dos: el contenedor de acordeones y el formulario de **un** objetivo.
+
+### D.1 Por qué pestañas en Progreso y acordeones en Ajustes
+
+No es una elección estética:
+
+| | Progreso | Ajustes |
+|---|---|---|
+| Tarea | **comparar** un objetivo consigo mismo en el tiempo | **editar** un objetivo concreto |
+| Varios a la vez | nunca: las gráficas no caben ni se comparan bien | sí: puede querer cambiar días en dos |
+| Patrón | **pestañas** (una visible) | **acordeones** (varios abiertos) |
+
+Un acordeón en Progreso obligaría a montar cuatro gráficas de Recharts a la vez
+(95 KB cada montaje). Unas pestañas en Ajustes impedirían ver de un vistazo qué
+tiene configurado cada objetivo.
+
+### D.2 Pestañas accesibles — `components/progress/GoalTabs.tsx`
+
+Patrón ARIA de pestañas completo. **Las flechas del teclado no son opcionales**:
+sin ellas una lista de pestañas es un grupo de botones con aspecto de pestañas.
+
+```tsx
+export default function GoalTabs({ goals, children }: Props) {
+  const [activa, setActiva] = useState(goals[0]?.goalId ?? '');
+  const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  /** ← → mueven entre pestañas; Home/End saltan a los extremos. */
+  function onKeyDown(e: React.KeyboardEvent, i: number) {
+    const delta = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    let destino = i;
+    if (delta !== 0) destino = (i + delta + goals.length) % goals.length;
+    else if (e.key === 'Home') destino = 0;
+    else if (e.key === 'End') destino = goals.length - 1;
+    else return;
+
+    e.preventDefault();
+    const id = goals[destino]!.goalId;
+    setActiva(id);
+    refs.current[id]?.focus();
+  }
+
+  return (
+    <>
+      <div role="tablist" aria-label="Objetivos" className="flex gap-1 border-b border-border">
+        {goals.map((g, i) => {
+          const seleccionada = g.goalId === activa;
+          return (
+            <button
+              key={g.goalId}
+              ref={(el) => { refs.current[g.goalId] = el; }}
+              role="tab"
+              id={`tab-${g.goalId}`}
+              aria-selected={seleccionada}
+              aria-controls={`panel-${g.goalId}`}
+              // Solo la pestaña activa entra en el orden de tabulación: desde
+              // ella se navega con las flechas. Es el patrón ARIA.
+              tabIndex={seleccionada ? 0 : -1}
+              onClick={() => setActiva(g.goalId)}
+              onKeyDown={(e) => onKeyDown(e, i)}
+              className={clsx(
+                'min-h-11 rounded-t-card px-4 text-sm font-medium transition',
+                seleccionada
+                  ? 'border-b-2 border-primary text-primary'
+                  : 'text-text-soft hover:text-text',
+              )}
+            >
+              {g.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {goals.map((g) => (
+        <div
+          key={g.goalId}
+          role="tabpanel"
+          id={`panel-${g.goalId}`}
+          aria-labelledby={`tab-${g.goalId}`}
+          hidden={g.goalId !== activa}
+          tabIndex={0}
+          className="pt-6"
+        >
+          {children(g)}
+        </div>
+      ))}
+    </>
+  );
+}
+```
+
+> **El panel inactivo lleva `hidden`, no `display:none` por clase.** Así sale del
+> árbol de accesibilidad y, de paso, Recharts no mide un contenedor de 0 px —
+> que es el motivo por el que una gráfica dentro de una pestaña oculta suele
+> renderizarse con ancho cero al mostrarla.
+
+### D.3 Acordeones en Ajustes — `components/settings/GoalAccordion.astro`
+
+**Sin JavaScript**: `<details>`/`<summary>` ya dan apertura, cierre, teclado y
+semántica de accesibilidad. Montar un acordeón en React aquí sería reimplementar
+peor lo que el navegador trae.
+
+```astro
+---
+interface Props { goal: GoalDoc; abierto?: boolean; }
+const { goal, abierto = false } = Astro.props;
+
+const resumen = {
+  reading: goal.metadata.type === 'reading' ? goal.metadata.bookTitle : null,
+  english: goal.metadata.type === 'english' ? goal.metadata.courseName : null,
+  study: goal.metadata.type === 'study' ? goal.metadata.subject : null,
+}[goal.type];
+---
+
+<details open={abierto} class="rounded-card border border-border bg-surface">
+  <summary
+    class="flex min-h-11 cursor-pointer list-none items-center gap-3 px-5 py-3
+           [&::-webkit-details-marker]:hidden"
+  >
+    <GoalIcon type={goal.type} />
+    <span class="grow">
+      <span class="font-medium">{goal.label}</span>
+      {/* El resumen plegado dice lo esencial sin abrir: días y contexto. */}
+      <span class="block text-sm text-text-soft">
+        {goal.scheduledDays.map((d) => WEEKDAY_LABELS[d].short).join(' · ')}
+        {resumen && ` · ${resumen}`}
+      </span>
+    </span>
+    <span aria-hidden class="text-text-soft transition-transform group-open:rotate-180">⌄</span>
+  </summary>
+
+  <div class="border-t border-border px-5 py-5">
+    <GoalSettingsForm client:visible goal={goal} />
+  </div>
+</details>
+```
+
+> `client:visible` en el formulario, no `client:load`: con tres objetivos se
+> montarían tres islas de React al abrir la página, y el usuario normalmente
+> edita una.
+
+### D.4 `ScheduleEditor` se parte en dos
+
+El componente actual mezcla tres responsabilidades. Se separan:
+
+| Antes | Después |
+|---|---|
+| nombre del usuario | `ProfileSettingsForm` (fuera de los acordeones: es del usuario, no de un objetivo) |
+| días + meta + libro | `GoalSettingsForm`, uno por objetivo |
+| zona horaria | `ProfileSettingsForm` |
+
+`GoalSettingsForm` reutiliza tal cual el `Field` extraído y los chips de día, y
+pinta los metadatos **según el tipo**:
+
+```tsx
+{goal.metadata.type === 'reading' && (
+  <>
+    <Field id={`${goal.goalId}-book`} label="Libro actual">…</Field>
+    <Field id={`${goal.goalId}-author`} label="Autor">…</Field>
+  </>
+)}
+{goal.metadata.type === 'english' && (
+  <>
+    <Field id={`${goal.goalId}-course`} label="Curso o plataforma">…</Field>
+    <Field id={`${goal.goalId}-level`} label="Nivel">…</Field>
+  </>
+)}
+```
+
+> **Los `id` llevan el `goalId` por delante.** Con tres acordeones en la misma
+> página, tres campos `id="book"` romperían todas las etiquetas y los
+> `aria-describedby`: un `id` duplicado hace que `<label for>` apunte al primero.
+
+### D.5 `/progreso` con pestañas
+
+```astro
+---
+const snapshots = await syncAllGoals(user.id);
+const resumenes = await Promise.all(
+  goals.map((g) => buildProgressSummary({ userId: user.id, goalId: g.goalId }, 30)),
+);
+---
+
+<AppLayout title="Progreso">
+  <GoalTabs client:load goals={goals}>
+    {/* Un panel por objetivo, cada uno con sus propias gráficas y su refugio */}
+  </GoalTabs>
+</AppLayout>
+```
+
+**Advertencia de rendimiento**: con tres objetivos, `/progreso` pasa a hacer tres
+`buildProgressSummary`, cada uno con su agregación. Si la carga se nota, el
+siguiente paso es cargar **solo la pestaña activa** y pedir las demás por
+`/api/progress/summary?goalId=` al cambiar de pestaña — no optimizar antes de
+medirlo.
+
+### Qué necesito de tu lado
+Confirmar si quieres un **cuarto estado** en Progreso: una pestaña "Todo" con las
+cifras agregadas de los tres objetivos. Es útil, pero obliga a decidir qué
+significa "racha" cuando hay tres objetivos con días distintos, y prefiero no
+inventarlo.
+
+### Criterio de aceptación
+- Las pestañas de `/progreso` se recorren con ← y →, y Home/End saltan a los
+  extremos; solo la activa está en el orden de tabulación.
+- El panel inactivo tiene `hidden`: no lo lee un lector de pantalla y Recharts no
+  mide 0 px de ancho al mostrarlo.
+- Cada pestaña muestra **sus** perritos: si Lectura tiene 7 e Inglés 3, las
+  cifras no se mezclan.
+- En `/ajustes`, los acordeones abren y cierran **sin JavaScript** (compruébalo
+  desactivándolo en el navegador).
+- El resumen plegado de cada acordeón muestra los días y el contexto sin abrirlo.
+- Ningún `id` se repite en la página con tres acordeones abiertos:
+  `document.querySelectorAll('[id]')` sin duplicados.
+
+
+---
+
+# TANDA E · Cierre de la expansión
+
+### Objetivo
+Dejar el sistema multi-objetivo listo para usarse a diario: alta de objetivos,
+datos de ejemplo y limpieza de lo que quedó obsoleto.
+
+### E.1 Alta y archivado de objetivos
+
+Los tres objetivos los crea `ensureDefaultGoals` al registrarse, pero el usuario
+tiene que poder desactivar los que no use. **Archivar, nunca borrar**: las
+sesiones y los eventos pasados siguen teniendo sentido y el historial no debe
+perder filas.
+
+- `PATCH /api/goals/[goalId]` con `{ archivedAt: <fecha> }`.
+- Un objetivo archivado desaparece de la Vista de Hoy y de los acordeones, pero
+  sigue en `/progreso` bajo un apartado "Archivados".
+- **Su reconciliación se detiene**: `syncAllGoals` filtra por `archivedAt: null`,
+  así que un objetivo archivado deja de restar perritos.
+
+### E.2 Semilla multi-objetivo
+
+`scripts/db-seed.ts` pasa a generar los tres objetivos con historias distintas,
+para que el dashboard y las pestañas se vean con datos de verdad:
+
+| Objetivo | Días | Perfil de datos |
+|---|---|---|
+| Lectura | L–V | constante, racha larga |
+| Inglés | M, J, S | irregular, con fallos |
+| Estudio | L, X, V | sesiones largas, empezadas hace poco |
+
+Mantiene la regla de la Tanda 9: avanza **día a día** con un `now` falso, y
+**nunca borra una cuenta existente**.
+
+### E.3 Limpieza
+
+- `GAME_PREVIEW` ya no existe (se borró en la Tanda 6); comprobar que ninguna
+  vista nueva reintroduzca cifras sueltas en el marcado.
+- Vocabulario: hay texto visible de lectura en tres gráficas y en el cronómetro.
+  Pasan a recibir el `label` del objetivo como prop:
+
+  | Archivo | Cadenas a parametrizar |
+  |---|---|
+  | `MinutesBarChart.tsx` | "Minutos leídos", "día programado sin leer", "días sin leer" |
+  | `WeekHeatmap.tsx` | "Sin leer", "Día programado sin leer" (×3 usos) |
+  | `ProgressTable.astro` | "Programado sin leer", el `caption` de la tabla |
+  | `SessionTimer.tsx` | "Empezar a leer", "Cuando quieras, empieza a leer." |
+- `src/lib/sessions-view.ts` expone `bookTitle`; renombrar a `contextLabel` para
+  que no mienta en los objetivos que no son lectura.
+
+### Criterio de aceptación
+- Archivar Inglés lo quita de la Vista de Hoy y **deja de penalizar**, sin borrar
+  ninguna de sus sesiones.
+- `npm run db:seed` produce tres objetivos con rachas distintas, y `/progreso`
+  muestra tres pestañas con gráficas distintas.
+- `grep -rnE "leer|leídos|lectura|libro" src/components/charts/` solo encuentra
+  comentarios, nunca texto que llegue a la pantalla.
+
 ---
 
 # Apéndice A · Resumen del balance
@@ -2524,3 +3603,33 @@ cumpla su criterio de aceptación. Si una tanda te obliga a modificar código de
 una anterior, hazlo, pero vuelve a validar el criterio de aquella antes de
 continuar. Y ante cualquier duda de balance o de negocio, **pregunta en vez de
 inventar un número**: los valores viven todos en `src/lib/game/config.ts`.
+
+---
+
+# Apéndice D · Qué se rompe al pasar a multi-objetivo
+
+Resumen para la IA desarrolladora de **qué código existente deja de valer**,
+porque es donde se pierde más tiempo si se descubre tarde.
+
+| Pieza | Estado | Motivo |
+|---|---|---|
+| `game/engine.ts`, `rewards.ts`, `penalties.ts` | **Se conserva** | Es puro y agnóstico: opera sobre un `GameState`, no sobre un usuario |
+| Los 45 tests del motor | **Se conservan** | Solo se les añade el parámetro `vocab` |
+| `lib/time.ts`, `lib/env.ts`, `lib/name.ts` | **Se conserva** | No saben nada de objetivos |
+| `ui/Button`, `ui/Field`, `ui/Card`, `ui/Stat` | **Se conserva** | Primitivas sin dominio |
+| `repos/*.ts` | **Firma rota** | `userId` → `GoalRef` en todas |
+| `db-init.ts` | **Reescrito** | Todos los índices cambian de clave |
+| `ProfileDoc` | **Adelgaza** | Pierde tres campos que pasan a `GoalDoc` |
+| `app.astro` | **Reescrito** | De cronómetro a Vista de Hoy |
+| `progreso.astro`, `ajustes.astro` | **Reescritos** | Pestañas y acordeones |
+| `ReadingTimer.tsx` | **Renombrado y desacoplado** | `SessionTimer`, sin `bookTitle` |
+| `ScheduleEditor.tsx` | **Partido en dos** | Perfil del usuario / ajustes de un objetivo |
+| `readingSessions` (colección) | **Renombrada** | `sessions` |
+
+**El orden importa.** A → B → C → D es una cadena: la Tanda B no compila sin los
+tipos de la A, y la C no tiene datos que pintar sin los endpoints de la B.
+Intentar adelantar la UI es la forma más rápida de acabar con dos modelos de
+datos conviviendo.
+
+
+---
