@@ -4,7 +4,9 @@ import Card from '@/components/ui/Card.astro';
 import Stat from '@/components/ui/Stat.astro';
 import ReadingTimer from '@/components/ReadingTimer';
 import Shelter from '@/components/Shelter';
-import { syncOnVisit } from '@/lib/game/service';
+import { syncAllGoals, syncGoal } from '@/lib/game/service';
+import { findGoal } from '@/lib/repos/goals';
+import { READING_GOAL_ID } from '@/lib/goal-constants';
 import { ensureProfile } from '@/lib/repos/profile';
 import {
   abandonStaleSessions,
@@ -28,8 +30,15 @@ if (profile.onboardedAt === null) {
 
 const now = new Date();
 
-// Liquida las penalizaciones de los días ya cerrados antes de pintar nada.
-const snapshot = await syncOnVisit(user.id, now);
+// Reconcilia TODOS los objetivos: las penalizaciones de uno no pueden depender
+// de que el usuario abra su pantalla.
+await syncAllGoals(user.id, now);
+
+// La interfaz todavía es de un solo hábito; la Vista de Hoy llega en la Tanda C.
+const ref = { userId: user.id, goalId: READING_GOAL_ID };
+const goal = await findGoal(ref);
+if (!goal) return Astro.redirect('/ajustes', 302);
+const snapshot = (await syncGoal(ref, now))!;
 
 // Cierra lo que quedó abierto hace horas antes de ofrecer retomar una sesión:
 // si no, el usuario vería un cronómetro con el tiempo que pasó durmiendo.
@@ -37,7 +46,7 @@ await abandonStaleSessions(user.id, now);
 const openSession = await findOpenSession(user.id);
 
 const greeting = firstName(user.name);
-const scheduledLabels = profile.scheduledDays.map((d) => WEEKDAY_LABELS[d].short);
+const scheduledLabels = goal.scheduledDays.map((d) => WEEKDAY_LABELS[d].short);
 const { shelter, today } = snapshot;
 ---
 
@@ -63,16 +72,17 @@ const { shelter, today } = snapshot;
     <ReadingTimer
       client:load
       initialSession={openSession ? toSessionView(openSession, now) : null}
-      bookTitle={profile.currentBookTitle}
-      dailyGoalMinutes={profile.dailyGoalMinutes}
+      goalId={goal.goalId}
+      contextLabel={goal.metadata.type === 'reading' ? goal.metadata.bookTitle : null}
+      dailyGoalMinutes={goal.dailyGoalMinutes}
       minSessionSeconds={MIN_SESSION_SECONDS}
       initialDaySeconds={today.totalSeconds}
     />
 
     {
-      profile.currentBookTitle && (
+      goal.metadata.type === 'reading' && goal.metadata.bookTitle && (
         <p class="mt-6 border-t border-border pt-4 text-center text-sm text-text-soft">
-          Estás leyendo <span class="font-medium text-text">{profile.currentBookTitle}</span>
+          Estás leyendo <span class="font-medium text-text">{goal.metadata.bookTitle}</span>
         </p>
       )
     }
@@ -82,7 +92,7 @@ const { shelter, today } = snapshot;
     <Stat
       label="Tu compromiso"
       value={scheduledLabels.join(' · ')}
-      hint={`${profile.scheduledDays.length} días a la semana`}
+      hint={`${goal.scheduledDays.length} días a la semana`}
       tone="primary"
     />
     <Stat
@@ -91,7 +101,7 @@ const { shelter, today } = snapshot;
       hint={
         today.dogsAwarded > 0
           ? `${today.dogsAwarded} ${today.dogsAwarded === 1 ? 'perrito' : 'perritos'} ganados hoy`
-          : `meta de ${profile.dailyGoalMinutes} min`
+          : `meta de ${goal.dailyGoalMinutes} min`
       }
       tone="accent"
     />

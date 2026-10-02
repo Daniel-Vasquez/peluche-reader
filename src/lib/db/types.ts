@@ -16,6 +16,75 @@
 
 import type { IsoWeekday } from '@/lib/time';
 
+/* ────────────────────────────────────────────────────────────────────────────
+   Objetivos
+
+   Cada objetivo (Lectura, Inglés, Estudio) es una FILA, no un campo: su propia
+   configuración, su propio refugio y su propio historial. Todo lo demás se
+   identifica por `GoalRef`, nunca por `userId` suelto.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+export type GoalType = 'reading' | 'english' | 'study';
+
+/**
+ * Metadatos propios de cada tipo, como unión discriminada.
+ *
+ * Es lo que permite que Inglés guarde un curso y Estudio una materia sin que
+ * ninguno tenga campos vacíos del otro. TypeScript obliga a comprobar `type`
+ * antes de leer cualquier campo, así que un formulario no puede escribir
+ * `courseName` en un objetivo de lectura.
+ */
+export type GoalMetadata =
+  | { type: 'reading'; bookTitle: string | null; author: string | null }
+  | { type: 'english'; courseName: string | null; level: string | null }
+  | { type: 'study'; subject: string | null; topic: string | null };
+
+export interface GoalDoc {
+  userId: string;
+  /**
+   * Slug estable y único por usuario. Es la clave de TODO lo demás: nunca se
+   * reutiliza ni se renombra, porque hay sesiones apuntando a él.
+   */
+  goalId: string;
+  type: GoalType;
+  /** Nombre visible y editable: "Inglés", "Cálculo II". */
+  label: string;
+  /** Días comprometidos de ESTE objetivo. ISO 1..7. Vacío = inactivo. */
+  scheduledDays: IsoWeekday[];
+  dailyGoalMinutes: number;
+  metadata: GoalMetadata;
+  /** Orden en la Vista de Hoy. */
+  order: number;
+  /** Archivar en vez de borrar: las sesiones pasadas siguen teniendo sentido. */
+  archivedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Cómo se identifica un objetivo en toda la capa de datos.
+ *
+ * Se pasa el objeto entero y se expande con `...ref` en los filtros. Es lo que
+ * evita el error más probable de la refactorización: olvidar el `goalId`, que no
+ * da error y mezcla en silencio los datos de dos objetivos.
+ */
+export interface GoalRef {
+  userId: string;
+  goalId: string;
+}
+
+/** Metadato colapsado a texto para la interfaz, sin `switch` en los componentes. */
+export function goalContext(metadata: GoalMetadata): string | null {
+  switch (metadata.type) {
+    case 'reading':
+      return metadata.bookTitle;
+    case 'english':
+      return metadata.courseName;
+    case 'study':
+      return metadata.subject;
+  }
+}
+
 /** Cómo terminó un día para el usuario. */
 export type DayOutcome =
   /** Aún en curso, o sin lectura suficiente pero todavía recuperable (hoy). */
@@ -42,16 +111,16 @@ export type GameEventType =
   | 'week_rollover'
   | 'adoption';
 
-/** Preferencias del usuario. Una por usuario (índice único en `userId`). */
+/**
+ * Preferencias del USUARIO, no de un objetivo. Una por usuario.
+ *
+ * Los días comprometidos, la meta y el libro vivían aquí cuando solo había un
+ * hábito; ahora son de cada objetivo y están en `GoalDoc`.
+ */
 export interface ProfileDoc {
   userId: string;
   /** Zona horaria IANA, p. ej. `"America/Bogota"`. */
   timezone: string;
-  /** Días comprometidos, ISO 1..7, ordenados y sin duplicados. Nunca vacío. */
-  scheduledDays: IsoWeekday[];
-  /** Meta personal de minutos por sesión (solo UI; no afecta al balance). */
-  dailyGoalMinutes: number;
-  currentBookTitle: string | null;
   /** `null` hasta que el usuario guarda sus ajustes por primera vez. */
   onboardedAt: Date | null;
   createdAt: Date;
@@ -64,10 +133,15 @@ export interface ProfileDoc {
  * El tiempo real es `accumulatedSeconds + (lastResumedAt ? now - lastResumedAt : 0)`
  * y **solo el servidor** lo calcula (ver `elapsedSeconds` en `repos/sessions.ts`).
  */
-export interface ReadingSessionDoc {
+export interface SessionDoc {
   userId: string;
+  goalId: string;
   dayKey: string;
-  bookTitle: string | null;
+  /**
+   * Instantánea del metadato al abrir la sesión: si el usuario cambia de libro o
+   * de tema, las sesiones viejas conservan el suyo.
+   */
+  contextLabel: string | null;
   status: SessionStatus;
   startedAt: Date;
   /** Inicio del tramo en curso; `null` mientras está en pausa. */
@@ -86,6 +160,7 @@ export interface ReadingSessionDoc {
 /** Agregado por usuario y día. Índice único en `(userId, dayKey)`. */
 export interface DailyProgressDoc {
   userId: string;
+  goalId: string;
   dayKey: string;
   weekKey: string;
   /** ¿Era un día comprometido según el perfil en el momento de registrarlo? */
@@ -104,6 +179,7 @@ export interface DailyProgressDoc {
 /** Estado de gamificación. Uno por usuario (índice único en `userId`). */
 export interface GameStateDoc {
   userId: string;
+  goalId: string;
   /** Perritos vivos en el refugio. Invariante: `FLOOR_DOGS <= dogs <= capacity`. */
   dogs: number;
   /** Aforo actual del refugio. */
@@ -125,6 +201,7 @@ export interface GameStateDoc {
 /** Entrada del historial. Alimenta la línea de tiempo de `/progreso`. */
 export interface GameEventDoc {
   userId: string;
+  goalId: string;
   dayKey: string;
   type: GameEventType;
   /** Positivo si gana, negativo si pierde, `0` en el cambio de semana. */
@@ -147,7 +224,8 @@ export const BETTER_AUTH_COLLECTIONS = [
 /** Colecciones propias de la app. */
 export const APP_COLLECTIONS = [
   'profiles',
-  'readingSessions',
+  'goals',
+  'sessions',
   'dailyProgress',
   'gameState',
   'gameEvents',

@@ -4,8 +4,9 @@ import type {
   DailyProgressDoc,
   GameEventDoc,
   GameStateDoc,
+  GoalDoc,
   ProfileDoc,
-  ReadingSessionDoc,
+  SessionDoc,
 } from './types';
 
 /**
@@ -16,8 +17,13 @@ export const col = {
   profiles: async (): Promise<Collection<ProfileDoc>> =>
     (await getDb()).collection<ProfileDoc>('profiles'),
 
-  sessions: async (): Promise<Collection<ReadingSessionDoc>> =>
-    (await getDb()).collection<ReadingSessionDoc>('readingSessions'),
+  goals: async (): Promise<Collection<GoalDoc>> =>
+    (await getDb()).collection<GoalDoc>('goals'),
+
+  // `sessions`, no `readingSessions`: el nombre mentía en cuanto existe un
+  // objetivo que no es lectura.
+  sessions: async (): Promise<Collection<SessionDoc>> =>
+    (await getDb()).collection<SessionDoc>('sessions'),
 
   dailyProgress: async (): Promise<Collection<DailyProgressDoc>> =>
     (await getDb()).collection<DailyProgressDoc>('dailyProgress'),

@@ -8,20 +8,25 @@ import EventTimeline from '@/components/charts/EventTimeline.astro';
 import MinutesBarChart from '@/components/charts/MinutesBarChart';
 import ProgressTable from '@/components/charts/ProgressTable.astro';
 import WeekHeatmap from '@/components/charts/WeekHeatmap';
-import { syncOnVisit } from '@/lib/game/service';
-import { ensureProfile } from '@/lib/repos/profile';
+import { syncAllGoals } from '@/lib/game/service';
+import { findGoal } from '@/lib/repos/goals';
+import { READING_GOAL_ID } from '@/lib/goal-constants';
 import { buildProgressSummary } from '@/lib/repos/summary';
 import { firstName } from '@/lib/name';
 
 export const prerender = false;
 
 const user = Astro.locals.user!;
-const profile = await ensureProfile(user.id);
 
 // Reconcilia los días cerrados también aquí: el usuario puede entrar directo a
 // /progreso sin pasar por /app, y vería cifras sin las penalizaciones al día.
-await syncOnVisit(user.id);
-const summary = await buildProgressSummary(user.id, 30);
+await syncAllGoals(user.id);
+
+// Una sola pestaña por ahora; las de los demás objetivos llegan en la Tanda D.
+const ref = { userId: user.id, goalId: READING_GOAL_ID };
+const goal = await findGoal(ref);
+if (!goal) return Astro.redirect('/ajustes', 302);
+const summary = await buildProgressSummary(ref, 30);
 
 const { totals, shelter } = summary;
 const last14 = summary.daily.slice(-14);
@@ -88,7 +93,7 @@ const greeting = firstName(user.name);
           <MinutesBarChart
             client:visible
             data={last14}
-            goalMinutes={profile.dailyGoalMinutes}
+            goalMinutes={goal.dailyGoalMinutes}
           />
         </Card>
 

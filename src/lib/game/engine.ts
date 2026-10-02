@@ -12,8 +12,13 @@ import { dogsForMinutes } from './rewards';
  * La capa que habla con MongoDB es `game/service.ts` (Tanda 7).
  */
 
-export type GameState = Omit<GameStateDoc, 'userId' | 'updatedAt'>;
-export type NewEvent = Omit<GameEventDoc, 'userId' | 'createdAt'>;
+/**
+ * El motor NO conoce `userId` ni `goalId`: son identidad de persistencia, no
+ * estado de juego. Por eso varios objetivos son simplemente varios `GameState`,
+ * y este archivo no cambió una línea al pasar a multi-objetivo.
+ */
+export type GameState = Omit<GameStateDoc, 'userId' | 'goalId' | 'updatedAt'>;
+export type NewEvent = Omit<GameEventDoc, 'userId' | 'goalId' | 'createdAt'>;
 
 export type GameAction =
   /** Cambio de semana: reinicia el tope de pérdida. */

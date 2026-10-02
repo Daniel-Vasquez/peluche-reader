@@ -1,6 +1,6 @@
 import { ObjectId, type WithId } from 'mongodb';
 import { col } from '@/lib/db/collections';
-import type { ProfileDoc, ReadingSessionDoc } from '@/lib/db/types';
+import type { GoalDoc, GoalRef, SessionDoc } from '@/lib/db/types';
 import { GAME } from '@/lib/game/config';
 import { applyAction, reconcile, type GameState } from '@/lib/game/engine';
 import { weeklyLossCap } from '@/lib/game/penalties';
@@ -12,6 +12,7 @@ import {
   saveGameState,
   toGameState,
 } from '@/lib/repos/gameState';
+import { ensureDefaultGoals, findGoal, listGoals } from '@/lib/repos/goals';
 import { ensureProfile } from '@/lib/repos/profile';
 import {
   addSessionToDay,
@@ -50,6 +51,8 @@ export interface FreshPenalty {
 }
 
 export interface GameSnapshot {
+  goalId: string;
+  label: string;
   shelter: ShelterView;
   today: {
     dayKey: string;
@@ -93,30 +96,32 @@ function toShelterView(state: GameState): ShelterView {
  * estado idéntico y cero eventos, así que no se escribe nada.
  */
 async function reconcileAndPersist(
-  userId: string,
-  profile: ProfileDoc,
+  ref: GoalRef,
+  goal: GoalDoc,
   state: GameState,
   todayKey: string,
 ): Promise<{ state: GameState; penalties: FreshPenalty[] }> {
   const firstPending = addDays(state.lastReconciledDay, 1);
   const completedDays =
     firstPending < todayKey
-      ? await completedDayKeysBetween(userId, firstPending, todayKey)
+      ? await completedDayKeysBetween(ref, firstPending, todayKey)
       : new Set<string>();
 
-  const result = reconcile(state, todayKey, profile.scheduledDays, completedDays);
+  // Los días comprometidos son los del OBJETIVO, no los del perfil: fallar
+  // inglés no puede depender del calendario de lectura.
+  const result = reconcile(state, todayKey, goal.scheduledDays, completedDays);
 
   if (result.events.length === 0 && result.state.lastReconciledDay === state.lastReconciledDay) {
     return { state, penalties: [] };
   }
 
-  await saveGameState(userId, result.state);
-  await appendEvents(userId, result.events);
+  await saveGameState(ref, result.state);
+  await appendEvents(ref, result.events);
 
   // Anotar cómo terminó cada día cerrado, para el dashboard de la Tanda 8.
   for (const day of result.days) {
     if (day.outcome === 'completed') continue; // ya lo marcó `setDogsAwarded`
-    await setDayOutcome(userId, day.dayKey, day.outcome);
+    await setDayOutcome(ref, day.dayKey, day.outcome);
   }
 
   const penalties = result.events
@@ -134,22 +139,29 @@ async function reconcileAndPersist(
  * No lo llama el middleware: encarecería **todas** las peticiones, incluidos los
  * endpoints y los assets.
  */
-export async function syncOnVisit(userId: string, now = new Date()): Promise<GameSnapshot> {
-  const profile = await ensureProfile(userId);
-  const todayKey = dayKey(now, profile.timezone);
+export async function syncGoal(
+  ref: GoalRef,
+  now = new Date(),
+): Promise<GameSnapshot | null> {
+  const profile = await ensureProfile(ref.userId);
+  const goal = await findGoal(ref);
+  if (!goal) return null;
 
-  const stateDoc = await ensureGameState(userId, weekKeyFromDayKey(todayKey), todayKey);
+  const todayKey = dayKey(now, profile.timezone);
+  const stateDoc = await ensureGameState(ref, weekKeyFromDayKey(todayKey), todayKey);
   const { state, penalties } = await reconcileAndPersist(
-    userId,
-    profile,
+    ref,
+    goal,
     toGameState(stateDoc),
     todayKey,
   );
 
-  const todayProgress = await findDayProgress(userId, todayKey);
-  const scheduled = profile.scheduledDays.includes(isoWeekday(now, profile.timezone));
+  const todayProgress = await findDayProgress(ref, todayKey);
+  const scheduled = goal.scheduledDays.includes(isoWeekday(now, profile.timezone));
 
   return {
+    goalId: goal.goalId,
+    label: goal.label,
     shelter: toShelterView(state),
     today: {
       dayKey: todayKey,
@@ -159,6 +171,26 @@ export async function syncOnVisit(userId: string, now = new Date()): Promise<Gam
     },
     freshPenalties: penalties,
   };
+}
+
+/**
+ * Reconcilia TODOS los objetivos activos del usuario.
+ *
+ * Es lo que llaman las páginas: las penalizaciones de inglés no pueden depender
+ * de que el usuario abra la pestaña de inglés.
+ */
+export async function syncAllGoals(
+  userId: string,
+  now = new Date(),
+): Promise<GameSnapshot[]> {
+  await ensureDefaultGoals(userId);
+  const goals = await listGoals(userId);
+  const snapshots: GameSnapshot[] = [];
+  for (const goal of goals) {
+    const snapshot = await syncGoal({ userId, goalId: goal.goalId }, now);
+    if (snapshot) snapshots.push(snapshot);
+  }
+  return snapshots;
 }
 
 /**
@@ -175,16 +207,22 @@ export async function syncOnVisit(userId: string, now = new Date()): Promise<Gam
  * siempre apunta al total acumulado.
  */
 export async function settleSession(
-  userId: string,
-  session: WithId<ReadingSessionDoc>,
+  session: WithId<SessionDoc>,
   now = new Date(),
 ): Promise<SettleResult> {
-  const profile = await ensureProfile(userId);
+  // El `ref` sale de la propia sesión: así es imposible liquidarla contra el
+  // objetivo equivocado, que es el error que un `userId` suelto permitiría.
+  const ref: GoalRef = { userId: session.userId, goalId: session.goalId };
+
+  const profile = await ensureProfile(ref.userId);
+  const goal = await findGoal(ref);
+  if (!goal) throw new Error(`La sesión apunta a un objetivo inexistente: ${ref.goalId}`);
+
   const todayKey = dayKey(now, profile.timezone);
   const sessions = await col.sessions();
 
-  const stateDoc = await ensureGameState(userId, weekKeyFromDayKey(todayKey), todayKey);
-  let state = (await reconcileAndPersist(userId, profile, toGameState(stateDoc), todayKey)).state;
+  const stateDoc = await ensureGameState(ref, weekKeyFromDayKey(todayKey), todayKey);
+  let state = (await reconcileAndPersist(ref, goal, toGameState(stateDoc), todayKey)).state;
 
   const notCounted = (minutes: number): SettleResult => ({
     dogsGained: 0,
@@ -197,22 +235,22 @@ export async function settleSession(
 
   // Sesión que no puntúa: ni suma tiempo al día ni toca el refugio.
   if (session.status !== 'completed' || session.durationSeconds < MIN_SESSION_SECONDS) {
-    const existing = await findDayProgress(userId, session.dayKey);
+    const existing = await findDayProgress(ref, session.dayKey);
     return notCounted(Math.floor((existing?.totalSeconds ?? 0) / 60));
   }
 
   // Ya liquidada: devolver el estado actual sin volver a pagar.
   if (session.settledAt) {
-    const existing = await findDayProgress(userId, session.dayKey);
+    const existing = await findDayProgress(ref, session.dayKey);
     const minutes = Math.floor((existing?.totalSeconds ?? 0) / 60);
     return { ...notCounted(minutes), counted: true };
   }
 
   // El día de la sesión es una fecha civil, así que no hace falta zona horaria.
-  const scheduled = profile.scheduledDays.includes(isoWeekdayOfDayKey(session.dayKey));
+  const scheduled = goal.scheduledDays.includes(isoWeekdayOfDayKey(session.dayKey));
 
   const dayProgress = await addSessionToDay(
-    userId,
+    ref,
     session.dayKey,
     session.durationSeconds,
     scheduled,
@@ -227,9 +265,9 @@ export async function settleSession(
   });
   state = result.state;
 
-  await saveGameState(userId, state);
-  await appendEvents(userId, result.events);
-  await setDogsAwarded(userId, session.dayKey, dogsForMinutes(minutesToday));
+  await saveGameState(ref, state);
+  await appendEvents(ref, result.events);
+  await setDogsAwarded(ref, session.dayKey, dogsForMinutes(minutesToday));
   await sessions.updateOne(
     { _id: new ObjectId(session._id) },
     { $set: { settledAt: now, updatedAt: now } },
@@ -248,7 +286,7 @@ export async function settleSession(
   };
 }
 
-/** Historial reciente, para la línea de tiempo de `/progreso` (Tanda 8). */
-export async function timeline(userId: string, limit = 20) {
-  return recentEvents(userId, limit);
+/** Historial reciente de UN objetivo, para la línea de tiempo de `/progreso`. */
+export async function timeline(ref: GoalRef, limit = 20) {
+  return recentEvents(ref, limit);
 }

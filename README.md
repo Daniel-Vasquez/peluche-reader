@@ -97,6 +97,9 @@ npm run dev              # http://localhost:4321
 | `npm run typecheck` | `tsc --noEmit` sobre todo el proyecto |
 | `npm test` | Vitest: **45 tests** del motor de gamificación |
 | `npm run db:init` | Crea los índices de MongoDB (idempotente) |
+| `npm run db:dump` | Vuelca todas las colecciones a `backups/<marca>/` |
+| `npm run db:restore -- <carpeta>` | Restaura un volcado; exige `ALLOW_DB_RESTORE=yes` |
+| `npm run db:migrate` | Migración multi-objetivo; exige `ALLOW_DB_MIGRATE=yes` |
 | `npm run db:reset` | Vacía las colecciones; exige `ALLOW_DB_RESET=yes` |
 | `npm run db:seed` | Crea un usuario de demo con 8 semanas de historia |
 | `npm run preview` | **No funciona** con el adaptador de Vercel; usa `vercel dev` |
@@ -268,8 +271,8 @@ lectura en un sistema de objetivos independientes —**Lectura, Inglés y Estudi
 cada uno con sus días comprometidos, sus metadatos y su propio refugio de
 perritos.
 
-- [ ] **Tanda A** · Refactorización del esquema: colección `goals` y `goalId` en
-      todas las colecciones de datos, con script de migración
+- [x] **Tanda A** · Esquema multi-objetivo: colección `goals`, `goalId` en todas
+      las colecciones de datos, migración y respaldo
 - [ ] **Tanda B** · Backend por objetivo: `userId` → `GoalRef` en los repos
 - [ ] **Tanda C** · «Vista de Hoy» en `/app` y cronómetro en `/sesion/[goalId]`
 - [ ] **Tanda D** · `/progreso` por pestañas y `/ajustes` por acordeones

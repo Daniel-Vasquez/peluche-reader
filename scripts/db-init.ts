@@ -18,33 +18,47 @@ async function main(): Promise<void> {
     created.push(`  ${collection}.${name}`);
   };
 
-  // Un perfil y un estado de juego por usuario. El índice único es la garantía
-  // de que dos peticiones concurrentes no creen duplicados vía upsert.
+  // Un perfil por usuario: la zona horaria y el onboarding son de la cuenta.
   await index('profiles', 'userId (único)',
     db.collection('profiles').createIndex({ userId: 1 }, { unique: true }));
 
-  await index('gameState', 'userId (único)',
-    db.collection('gameState').createIndex({ userId: 1 }, { unique: true }));
+  // Un objetivo por (usuario, slug).
+  await index('goals', 'userId+goalId (único)',
+    db.collection('goals').createIndex({ userId: 1, goalId: 1 }, { unique: true }));
 
-  // Clave del agregado diario. Sin este índice único, el upsert de
-  // `addSessionToDay` (Tanda 7) podría crear dos documentos para el mismo día.
-  await index('dailyProgress', 'userId+dayKey (único)',
-    db.collection('dailyProgress').createIndex({ userId: 1, dayKey: 1 }, { unique: true }));
+  // La Vista de Hoy pregunta por los objetivos activos de un usuario, en orden.
+  await index('goals', 'userId+archivedAt+order',
+    db.collection('goals').createIndex({ userId: 1, archivedAt: 1, order: 1 }));
 
-  // Consultas del dashboard: resumen semanal y rangos de días.
-  await index('dailyProgress', 'userId+weekKey',
-    db.collection('dailyProgress').createIndex({ userId: 1, weekKey: 1 }));
+  // Un estado de juego por OBJETIVO: es lo que hace los refugios independientes.
+  await index('gameState', 'userId+goalId (único)',
+    db.collection('gameState').createIndex({ userId: 1, goalId: 1 }, { unique: true }));
 
-  await index('readingSessions', 'userId+dayKey',
-    db.collection('readingSessions').createIndex({ userId: 1, dayKey: 1 }));
+  // Clave del agregado diario. Sin `goalId`, dos objetivos del mismo día
+  // colisionarían y el segundo no podría registrarse.
+  await index('dailyProgress', 'userId+goalId+dayKey (único)',
+    db.collection('dailyProgress')
+      .createIndex({ userId: 1, goalId: 1, dayKey: 1 }, { unique: true }));
 
-  // Recuperar la sesión abierta al recargar la página.
-  await index('readingSessions', 'userId+status',
-    db.collection('readingSessions').createIndex({ userId: 1, status: 1 }));
+  // Consultas del dashboard: resumen semanal por objetivo.
+  await index('dailyProgress', 'userId+goalId+weekKey',
+    db.collection('dailyProgress').createIndex({ userId: 1, goalId: 1, weekKey: 1 }));
 
-  // Línea de tiempo de /progreso, más reciente primero.
-  await index('gameEvents', 'userId+createdAt desc',
-    db.collection('gameEvents').createIndex({ userId: 1, createdAt: -1 }));
+  await index('sessions', 'userId+goalId+dayKey',
+    db.collection('sessions').createIndex({ userId: 1, goalId: 1, dayKey: 1 }));
+
+  // Solo UNA sesión abierta por usuario, aunque tenga varios objetivos: nadie
+  // lee y estudia a la vez. El índice parcial lo convierte en regla de la base
+  // de datos, no solo del código.
+  await index('sessions', 'userId (único, solo abiertas)',
+    db.collection('sessions').createIndex(
+      { userId: 1 },
+      { unique: true, partialFilterExpression: { status: { $in: ['running', 'paused'] } } },
+    ));
+
+  // Línea de tiempo de /progreso por objetivo, más reciente primero.
+  await index('gameEvents', 'userId+goalId+createdAt desc',
+    db.collection('gameEvents').createIndex({ userId: 1, goalId: 1, createdAt: -1 }));
 
   console.log('Índices asegurados:');
   console.log(created.join('\n'));

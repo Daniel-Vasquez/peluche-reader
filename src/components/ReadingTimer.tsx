@@ -13,7 +13,10 @@ const PING_INTERVAL_MS = 30_000;
 interface Props {
   /** Sesión abierta que el servidor encontró al renderizar, si había alguna. */
   initialSession: SessionView | null;
-  bookTitle: string | null;
+  /** Objetivo al que pertenece la sesión. Lo exige `/api/sessions/start`. */
+  goalId: string;
+  /** Libro, curso o tema: el metadato del objetivo, ya resuelto por el servidor. */
+  contextLabel: string | null;
   dailyGoalMinutes: number;
   minSessionSeconds: number;
   /** Segundos ya completados hoy en sesiones anteriores. */
@@ -31,7 +34,8 @@ function phaseOf(session: SessionView | null): Phase {
 
 export default function ReadingTimer({
   initialSession,
-  bookTitle,
+  goalId,
+  contextLabel: _contextLabel,
   dailyGoalMinutes,
   minSessionSeconds,
   initialDaySeconds,
@@ -118,7 +122,9 @@ export default function ReadingTimer({
   async function handleStart() {
     setBusy(true);
     setLastResult(null);
-    const data = (await post('/api/sessions/start', { bookTitle })) as
+    // El contexto lo resuelve el servidor desde el objetivo: un cliente no
+    // debería decidir con qué libro o tema se guarda la sesión.
+    const data = (await post('/api/sessions/start', { goalId })) as
       | { session: SessionView }
       | null;
     if (data) adopt(data.session);

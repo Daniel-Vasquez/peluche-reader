@@ -24,9 +24,10 @@ import 'dotenv/config';
 import { closeMongoClient, getDb } from '@/lib/db/client';
 import { getAuth } from '@/lib/auth';
 import { col } from '@/lib/db/collections';
-import type { ReadingSessionDoc } from '@/lib/db/types';
-import { settleSession, syncOnVisit } from '@/lib/game/service';
-import { updateProfile } from '@/lib/repos/profile';
+import type { SessionDoc } from '@/lib/db/types';
+import { settleSession, syncAllGoals, syncGoal } from '@/lib/game/service';
+import { READING_GOAL_ID } from '@/lib/goal-constants';
+import { ensureDefaultGoals, updateGoal } from '@/lib/repos/goals';
 import { readEnvOr } from '@/lib/env';
 import { addDays, dayKey, isoWeekdayOfDayKey, type IsoWeekday } from '@/lib/time';
 
@@ -97,11 +98,12 @@ async function main(): Promise<void> {
   const userId = signUp.user.id;
   console.log(`  Usuario creado: ${userId}`);
 
-  await updateProfile(userId, {
+  await ensureDefaultGoals(userId);
+  const ref = { userId, goalId: READING_GOAL_ID };
+  await updateGoal(ref, {
     scheduledDays: SCHEDULED,
-    timezone: TIMEZONE,
     dailyGoalMinutes: 20,
-    currentBookTitle: BOOK,
+    metadata: { type: 'reading', bookTitle: BOOK, author: null },
   });
 
   const sessions = await col.sessions();
@@ -117,17 +119,17 @@ async function main(): Promise<void> {
     const noon = new Date(`${day}T12:00:00.000Z`);
 
     // 1. Entrar a la app ese día: liquida las penalizaciones pendientes.
-    await syncOnVisit(userId, noon);
+    await syncGoal(ref, noon);
 
     // 2. Leer, si toca.
     const minutes = minutesFor(day, i);
     if (minutes === 0) continue;
 
     const startedAt = new Date(noon.getTime() - minutes * 60_000);
-    const doc: ReadingSessionDoc = {
-      userId,
+    const doc: SessionDoc = {
+      ...ref,
       dayKey: day,
-      bookTitle: BOOK,
+      contextLabel: BOOK,
       status: 'completed',
       startedAt,
       lastResumedAt: null,
@@ -141,14 +143,14 @@ async function main(): Promise<void> {
     const { insertedId } = await sessions.insertOne(doc);
 
     // 3. Liquidarla con el reloj de ese día.
-    await settleSession(userId, { ...doc, _id: insertedId }, noon);
+    await settleSession({ ...doc, _id: insertedId }, noon);
 
     minutesTotal += minutes;
     sessionsTotal += 1;
   }
 
   // Última visita con el reloj real, para dejar el estado al día.
-  const snapshot = await syncOnVisit(userId);
+  const snapshot = (await syncAllGoals(userId)).find((s) => s.goalId === READING_GOAL_ID)!;
 
   console.log(`\n  ${sessionsTotal} sesiones · ${minutesTotal} minutos en ${WEEKS} semanas`);
   console.log(`  Refugio: ${snapshot.shelter.dogs}/${snapshot.shelter.capacity} perritos, ` +

@@ -51,8 +51,11 @@ export const POST: APIRoute = async ({ locals, request }) => {
 
   const now = new Date();
   const closed = await finishSession(session, now);
-  const reward = await settleSession(locals.user.id, closed, now);
-  const daySeconds = await completedSecondsForDay(locals.user.id, closed.dayKey);
+  const reward = await settleSession(closed, now);
+  const daySeconds = await completedSecondsForDay(
+    { userId: closed.userId, goalId: closed.goalId },
+    closed.dayKey,
+  );
 
   return json({
     session: toSessionView(closed, now),

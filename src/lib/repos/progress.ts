@@ -1,6 +1,6 @@
 import type { WithId } from 'mongodb';
 import { col } from '@/lib/db/collections';
-import type { DailyProgressDoc, DayOutcome } from '@/lib/db/types';
+import type { DailyProgressDoc, DayOutcome, GoalRef } from '@/lib/db/types';
 import { weekKeyFromDayKey } from '@/lib/time';
 
 /**
@@ -10,14 +10,14 @@ import { weekKeyFromDayKey } from '@/lib/time';
  * y el índice único `(userId, dayKey)` impide que se cree un segundo documento.
  */
 export async function addSessionToDay(
-  userId: string,
+  ref: GoalRef,
   dayKey: string,
   seconds: number,
   scheduled: boolean,
 ): Promise<WithId<DailyProgressDoc>> {
   const progress = await col.dailyProgress();
   const result = await progress.findOneAndUpdate(
-    { userId, dayKey },
+    { ...ref, dayKey },
     {
       $inc: { totalSeconds: seconds, sessionsCount: 1 },
       $set: { weekKey: weekKeyFromDayKey(dayKey), scheduled, updatedAt: new Date() },
@@ -25,16 +25,16 @@ export async function addSessionToDay(
     },
     { upsert: true, returnDocument: 'after' },
   );
-  if (!result) throw new Error(`No se pudo registrar el día ${dayKey} de ${userId}`);
+  if (!result) throw new Error(`No se pudo registrar el día ${dayKey} de ${ref.goalId}`);
   return result;
 }
 
 /** Lee el progreso de un día, sin crearlo. */
 export async function findDayProgress(
-  userId: string,
+  ref: GoalRef,
   dayKey: string,
 ): Promise<WithId<DailyProgressDoc> | null> {
-  return (await col.dailyProgress()).findOne({ userId, dayKey });
+  return (await col.dailyProgress()).findOne({ ...ref, dayKey });
 }
 
 /**
@@ -44,13 +44,13 @@ export async function findDayProgress(
  * diferencia contra este valor.
  */
 export async function setDogsAwarded(
-  userId: string,
+  ref: GoalRef,
   dayKey: string,
   totalDogs: number,
 ): Promise<void> {
   const progress = await col.dailyProgress();
   await progress.updateOne(
-    { userId, dayKey },
+    { ...ref, dayKey },
     {
       $set: {
         dogsAwarded: totalDogs,
@@ -66,13 +66,13 @@ export async function setDogsAwarded(
  * `upsert` porque un día sin ninguna sesión no tiene documento todavía.
  */
 export async function setDayOutcome(
-  userId: string,
+  ref: GoalRef,
   dayKey: string,
   outcome: DayOutcome,
 ): Promise<void> {
   const progress = await col.dailyProgress();
   await progress.updateOne(
-    { userId, dayKey },
+    { ...ref, dayKey },
     {
       $set: { outcome, weekKey: weekKeyFromDayKey(dayKey), updatedAt: new Date() },
       $setOnInsert: {
@@ -88,14 +88,14 @@ export async function setDayOutcome(
 
 /** Días con lectura suficiente en un rango. Alimenta la reconciliación. */
 export async function completedDayKeysBetween(
-  userId: string,
+  ref: GoalRef,
   fromDayKey: string,
   toDayKey: string,
 ): Promise<Set<string>> {
   const progress = await col.dailyProgress();
   const rows = await progress
     .find(
-      { userId, dayKey: { $gte: fromDayKey, $lte: toDayKey }, dogsAwarded: { $gt: 0 } },
+      { ...ref, dayKey: { $gte: fromDayKey, $lte: toDayKey }, dogsAwarded: { $gt: 0 } },
       { projection: { dayKey: 1 } },
     )
     .toArray();
@@ -104,13 +104,13 @@ export async function completedDayKeysBetween(
 
 /** Progreso de un rango de días, ordenado. Para el dashboard de la Tanda 8. */
 export async function dayProgressBetween(
-  userId: string,
+  ref: GoalRef,
   fromDayKey: string,
   toDayKey: string,
 ): Promise<WithId<DailyProgressDoc>[]> {
   const progress = await col.dailyProgress();
   return progress
-    .find({ userId, dayKey: { $gte: fromDayKey, $lte: toDayKey } })
+    .find({ ...ref, dayKey: { $gte: fromDayKey, $lte: toDayKey } })
     .sort({ dayKey: 1 })
     .toArray();
 }

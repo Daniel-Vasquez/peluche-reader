@@ -2483,6 +2483,22 @@ existentes sin perder nada. **Al terminar esta tanda la app sigue funcionando
 igual que antes**: un solo objetivo de lectura, pero ya expresado en el esquema
 nuevo.
 
+### ⚠️ Lo que esta tanda acabó absorbiendo
+
+Al ejecutarla quedó claro que **la Tanda A no puede terminar con los tipos**: en
+cuanto `ProfileDoc` adelgaza y las colecciones ganan `goalId`, nada compila. Dejar
+el árbol sin compilar no es un punto donde parar.
+
+Así que A absorbe **la propagación mecánica** que el plan había puesto en B
+—repos a `GoalRef`, `service.ts`, los endpoints y las páginas— y B se queda con
+lo que de verdad añade comportamiento: `/api/goals`, la inyección de vocabulario
+y el resto de endpoints. **Al terminar A la app funciona exactamente igual que
+antes**, con un único objetivo de lectura, pero ya sobre el esquema nuevo.
+
+`src/lib/goal-constants.ts` marca el acoplamiento temporal: mientras exista
+`READING_GOAL_ID`, `grep -rn READING_GOAL_ID src/` da la lista exacta de lo que
+las Tandas C y D tienen que desacoplar.
+
 ### ⚠️ Advertencia de alcance
 
 Esta tanda **modifica extensamente** tres archivos y rompe la firma de casi todos
@@ -2710,10 +2726,22 @@ async function main(): Promise<void> {
 **Orden de ejecución, y no es negociable:**
 
 ```bash
-node --env-file=.env scripts/rename-sessions.ts   # readingSessions → sessions
-npm run db:migrate                                 # estampa goalId y limpia
-npm run db:init                                    # crea los índices nuevos
+npx astro dev stop                  # 1. PARA EL SERVIDOR (ver abajo)
+npm run db:dump                     # 2. respaldo
+ALLOW_DB_MIGRATE=yes npm run db:migrate   # 3. renombra, estampa goalId, limpia
+npm run db:init                     # 4. crea los índices nuevos
 ```
+
+#### ⚠️ Para el servidor antes de migrar
+
+En la ejecución real esto costó un rato de depuración. Con `astro dev` corriendo,
+**cualquier visita a `/app` dispara `ensureDefaultGoals`**, que crea los tres
+objetivos con los valores por defecto. Si eso pasa antes de la migración, su
+`$setOnInsert` ya no hace nada y el objetivo de lectura se queda **sin la
+configuración del usuario**, en silencio: días `[1,2,3,4,5]` en vez de los suyos.
+
+El script ahora se defiende —usa `$set` para los campos que el perfil todavía
+tiene, no `$setOnInsert`—, pero parar el servidor sigue siendo lo correcto.
 
 `db:init` **después** de la migración: crear el índice único
 `(userId, goalId, dayKey)` sobre documentos que aún no tienen `goalId` falla,
@@ -2733,8 +2761,14 @@ porque todos valdrían `null` y colisionarían entre sí.
   `userId_1_dayKey_1`.
 - Volver a ejecutar la migración no cambia ningún documento (compara
   `updatedAt` antes y después).
-- `npm run typecheck` pasa: los tipos nuevos obligan a tocar los repos, que es
-  justo la Tanda B.
+- `npm run typecheck`, `npm test` (45) y `npm run build` pasan.
+- **La app funciona igual que antes**: registro, onboarding, cronómetro,
+  `/progreso` y `/ajustes`, sin errores de consola.
+- **La prueba que justifica la tanda**: 20 min en Lectura y 20 min en Inglés el
+  mismo día dan **+4 perritos a cada refugio**, generan **dos** documentos en
+  `dailyProgress`, y retrasar la reconciliación de Inglés **no toca** el refugio
+  de Lectura.
+- El índice único rechaza un segundo `(userId, goalId, dayKey)` con error 11000.
 
 ---
 

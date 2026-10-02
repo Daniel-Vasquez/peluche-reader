@@ -1,5 +1,5 @@
 import type { WithId } from 'mongodb';
-import type { ReadingSessionDoc } from '@/lib/db/types';
+import type { SessionDoc } from '@/lib/db/types';
 import { elapsedSeconds } from '@/lib/repos/sessions';
 
 /**
@@ -9,9 +9,11 @@ import { elapsedSeconds } from '@/lib/repos/sessions';
  */
 export interface SessionView {
   id: string;
+  goalId: string;
   dayKey: string;
-  bookTitle: string | null;
-  status: ReadingSessionDoc['status'];
+  /** Libro, curso o tema: el metadato del objetivo, ya resuelto a texto. */
+  contextLabel: string | null;
+  status: SessionDoc['status'];
   /** Segundos de lectura en el momento de responder. Autoritativo. */
   elapsedSeconds: number;
   /** `true` si el reloj corre ahora mismo. */
@@ -20,13 +22,14 @@ export interface SessionView {
 }
 
 export function toSessionView(
-  session: WithId<ReadingSessionDoc>,
+  session: WithId<SessionDoc>,
   now = new Date(),
 ): SessionView {
   return {
     id: String(session._id),
+    goalId: session.goalId,
     dayKey: session.dayKey,
-    bookTitle: session.bookTitle,
+    contextLabel: session.contextLabel,
     status: session.status,
     elapsedSeconds: elapsedSeconds(session, now),
     running: session.status === 'running',

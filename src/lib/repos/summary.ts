@@ -1,8 +1,9 @@
 import { col } from '@/lib/db/collections';
-import type { DailyProgressDoc } from '@/lib/db/types';
+import type { DailyProgressDoc, GoalRef } from '@/lib/db/types';
 import { GAME } from '@/lib/game/config';
 import { weeklyLossCap } from '@/lib/game/penalties';
 import { ensureGameState, recentEvents, toGameState } from '@/lib/repos/gameState';
+import { findGoal } from '@/lib/repos/goals';
 import { ensureProfile } from '@/lib/repos/profile';
 import { dayProgressBetween } from '@/lib/repos/progress';
 import type {
@@ -34,14 +35,17 @@ function shortLabel(key: string): string {
  * huecos**: una gráfica que salta del día 3 al día 9 miente sobre el ritmo.
  */
 export async function buildProgressSummary(
-  userId: string,
+  ref: GoalRef,
   days: number,
   now = new Date(),
 ): Promise<ProgressSummary> {
-  const profile = await ensureProfile(userId);
+  const profile = await ensureProfile(ref.userId);
+  const goal = await findGoal(ref);
+  if (!goal) throw new Error(`Objetivo inexistente: ${ref.goalId}`);
+
   const todayKey = dayKey(now, profile.timezone);
 
-  const stateDoc = await ensureGameState(userId, weekKeyFromDayKey(todayKey), todayKey);
+  const stateDoc = await ensureGameState(ref, weekKeyFromDayKey(todayKey), todayKey);
   const state = toGameState(stateDoc);
 
   // Ocho semanas para el mapa de calor, o el rango pedido si es mayor.
@@ -49,7 +53,7 @@ export async function buildProgressSummary(
   const rangeStart = addDays(todayKey, -(days - 1));
   const from = heatmapStart < rangeStart ? heatmapStart : rangeStart;
 
-  const rows = await dayProgressBetween(userId, from, todayKey);
+  const rows = await dayProgressBetween(ref, from, todayKey);
   const byDay = new Map<string, DailyProgressDoc>(rows.map((r) => [r.dayKey, r]));
 
   const toPoint = (key: string): DayPoint => {
@@ -58,7 +62,7 @@ export async function buildProgressSummary(
       dayKey: key,
       label: shortLabel(key),
       minutes: Math.floor((row?.totalSeconds ?? 0) / 60),
-      scheduled: row?.scheduled ?? profile.scheduledDays.includes(isoWeekdayOfDayKey(key)),
+      scheduled: row?.scheduled ?? goal.scheduledDays.includes(isoWeekdayOfDayKey(key)),
       outcome: row?.outcome ?? 'pending',
       dogsAwarded: row?.dogsAwarded ?? 0,
     };
@@ -84,7 +88,7 @@ export async function buildProgressSummary(
 
   // --- Evolución del refugio: se reconstruye hacia atrás desde el saldo actual
   // usando los eventos, que guardan `dogsAfter`.
-  const events = await recentEvents(userId, 400);
+  const events = await recentEvents(ref, 400);
   const lastDogsOfDay = new Map<string, number>();
   for (const event of events) {
     // `events` viene de más reciente a más antiguo, así que el primero de cada
@@ -104,7 +108,7 @@ export async function buildProgressSummary(
   }
 
   // --- Totales.
-  const allRows = await (await col.dailyProgress()).find({ userId }).toArray();
+  const allRows = await (await col.dailyProgress()).find(ref).toArray();
   const minutesAllTime = Math.floor(
     allRows.reduce((sum, r) => sum + r.totalSeconds, 0) / 60,
   );
