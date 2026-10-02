@@ -9,6 +9,8 @@ import { WEEKDAY_LABELS, type IsoWeekday } from '@/lib/time';
 const ISO_DAYS: IsoWeekday[] = [1, 2, 3, 4, 5, 6, 7];
 
 interface Props {
+  /** Objetivo que edita este formulario. */
+  goalId: string;
   initialName: string;
   initialScheduledDays: IsoWeekday[];
   initialDailyGoalMinutes: number;
@@ -26,6 +28,7 @@ const ERROR_ID = 'ajustes-error';
 const HOME_PATH = '/app';
 
 export default function ScheduleEditor({
+  goalId,
   initialName,
   initialScheduledDays,
   initialDailyGoalMinutes,
@@ -116,11 +119,6 @@ export default function ScheduleEditor({
       setError(nameCheck.error);
       return;
     }
-    if (days.length === 0) {
-      setError('Elige al menos un día de la semana.');
-      return;
-    }
-
     setIsSaving(true);
     setJustSaved(false);
     setError(null);
@@ -144,19 +142,32 @@ export default function ScheduleEditor({
         await authClient.getSession({ query: { disableCookieCache: true } });
       }
 
-      const response = await fetch('/api/profile', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scheduledDays: days,
-          dailyGoalMinutes: goal,
-          currentBookTitle: book,
-          timezone: browserTimezone,
+      /*
+       * Dos destinos, porque los datos viven en sitios distintos: la zona
+       * horaria es del usuario y los días, la meta y el libro son del objetivo.
+       * Se envían en paralelo; si cualquiera falla, se informa y no se marca
+       * como guardado.
+       */
+      const [perfil, objetivo] = await Promise.all([
+        fetch('/api/profile', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ timezone: browserTimezone }),
         }),
-      });
+        fetch(`/api/goals/${goalId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scheduledDays: days,
+            dailyGoalMinutes: goal,
+            metadata: { type: 'reading', bookTitle: book.trim() || null, author: null },
+          }),
+        }),
+      ]);
 
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null;
+      const fallida = [perfil, objetivo].find((r) => !r.ok);
+      if (fallida) {
+        const body = (await fallida.json().catch(() => null)) as { error?: string } | null;
         setError(body?.error ?? 'No pudimos guardar tus ajustes.');
         return;
       }
@@ -256,7 +267,7 @@ export default function ScheduleEditor({
 
         <p className="mt-3 text-sm text-text-soft">
           {days.length === 0
-            ? 'Sin días elegidos.'
+            ? 'Sin días: este objetivo queda inactivo y no te costará perritos.'
             : `${days.length} día${days.length === 1 ? '' : 's'} a la semana: ` +
               days.map((d) => WEEKDAY_LABELS[d].long).join(', ')}
         </p>

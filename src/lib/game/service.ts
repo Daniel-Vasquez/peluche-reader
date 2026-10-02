@@ -5,6 +5,7 @@ import { GAME } from '@/lib/game/config';
 import { applyAction, reconcile, type GameState } from '@/lib/game/engine';
 import { weeklyLossCap } from '@/lib/game/penalties';
 import { dogsForMinutes, nextRewardStep } from '@/lib/game/rewards';
+import { vocabularyFor } from '@/lib/game/vocabulary';
 import {
   appendEvents,
   ensureGameState,
@@ -109,7 +110,15 @@ async function reconcileAndPersist(
 
   // Los días comprometidos son los del OBJETIVO, no los del perfil: fallar
   // inglés no puede depender del calendario de lectura.
-  const result = reconcile(state, todayKey, goal.scheduledDays, completedDays);
+  // El vocabulario sale del TIPO del objetivo: un día fallado de inglés no puede
+  // registrarse como "Día programado sin leer".
+  const result = reconcile(
+    state,
+    todayKey,
+    goal.scheduledDays,
+    completedDays,
+    vocabularyFor(goal.type),
+  );
 
   if (result.events.length === 0 && result.state.lastReconciledDay === state.lastReconciledDay) {
     return { state, penalties: [] };
@@ -257,12 +266,16 @@ export async function settleSession(
   );
   const minutesToday = Math.floor(dayProgress.totalSeconds / 60);
 
-  const result = applyAction(state, {
-    kind: 'settle',
-    dayKey: session.dayKey,
-    minutesToday,
-    alreadyAwarded: dayProgress.dogsAwarded,
-  });
+  const result = applyAction(
+    state,
+    {
+      kind: 'settle',
+      dayKey: session.dayKey,
+      minutesToday,
+      alreadyAwarded: dayProgress.dogsAwarded,
+    },
+    vocabularyFor(goal.type),
+  );
   state = result.state;
 
   await saveGameState(ref, state);

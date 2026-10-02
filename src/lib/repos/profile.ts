@@ -2,14 +2,7 @@ import type { WithId } from 'mongodb';
 import { col } from '@/lib/db/collections';
 import type { ProfileDoc } from '@/lib/db/types';
 import { readEnvOr } from '@/lib/env';
-import { isValidTimezone, type IsoWeekday } from '@/lib/time';
-
-/** Valores de un perfil recién creado. */
-export const PROFILE_DEFAULTS = {
-  /** Lunes a viernes: el compromiso más habitual, y editable al instante. */
-  scheduledDays: [1, 2, 3, 4, 5] as IsoWeekday[],
-  dailyGoalMinutes: 10,
-} as const;
+import { isValidTimezone } from '@/lib/time';
 
 /** Metas ofrecidas en la interfaz. Coinciden con los escalones de recompensa. */
 export const GOAL_OPTIONS = [10, 15, 20, 25, 30] as const;
@@ -41,9 +34,6 @@ export async function ensureProfile(
       $setOnInsert: {
         userId,
         timezone: tz,
-        scheduledDays: [...PROFILE_DEFAULTS.scheduledDays],
-        dailyGoalMinutes: PROFILE_DEFAULTS.dailyGoalMinutes,
-        currentBookTitle: null,
         onboardedAt: null,
         createdAt: now,
         updatedAt: now,
@@ -57,12 +47,14 @@ export async function ensureProfile(
   return profile;
 }
 
-/** Campos que el usuario puede cambiar desde `/ajustes`. */
+/**
+ * Campos del PERFIL que el usuario puede cambiar desde `/ajustes`.
+ *
+ * Los días, la meta y el libro ya no están aquí: son de cada objetivo y se
+ * editan por `/api/goals/[goalId]`.
+ */
 export interface ProfilePatch {
-  scheduledDays?: IsoWeekday[];
   timezone?: string;
-  dailyGoalMinutes?: number;
-  currentBookTitle?: string | null;
 }
 
 /**

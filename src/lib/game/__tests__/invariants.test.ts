@@ -9,8 +9,12 @@ import {
   type GameState,
 } from '@/lib/game/engine';
 import { weeklyLossCap } from '@/lib/game/penalties';
+import { vocabularyFor } from '@/lib/game/vocabulary';
 import { dogsForMinutes } from '@/lib/game/rewards';
 import { addDays, type IsoWeekday } from '@/lib/time';
+
+/** Vocabulario de prueba: el motor no debe depender de cuál sea. */
+const VOCAB = vocabularyFor('reading');
 
 /**
  * Prueba de fuerza bruta: miles de secuencias aleatorias de acciones sobre el
@@ -82,7 +86,7 @@ describe('invariantes bajo secuencias aleatorias', () => {
           awardedToday = Math.max(awardedToday, dogsForMinutes(minutes));
         }
 
-        const result = applyAction(s, action);
+        const result = applyAction(s, action, VOCAB);
         s = result.state;
         checkInvariants(s, `semilla ${seed}, paso ${step}, acción ${action.kind}`);
 
@@ -113,14 +117,14 @@ describe('invariantes bajo secuencias aleatorias', () => {
       }
 
       let s = { ...initialState('2026-W01', inicio), lastReconciledDay: inicio };
-      const first = reconcile(s, hoy, horario, leyo);
+      const first = reconcile(s, hoy, horario, leyo, VOCAB);
       checkInvariants(first.state, `semilla ${seed}, hueco de ${huecoDias} días`);
 
       // Nunca juzga hoy.
       expect(first.state.lastReconciledDay < hoy).toBe(true);
 
       // Idempotente: repetir no cambia nada ni emite eventos.
-      const second = reconcile(first.state, hoy, horario, leyo);
+      const second = reconcile(first.state, hoy, horario, leyo, VOCAB);
       expect(second.events).toEqual([]);
       expect(second.state).toEqual(first.state);
     }

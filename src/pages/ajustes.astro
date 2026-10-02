@@ -3,11 +3,17 @@ import AppLayout from '@/layouts/AppLayout.astro';
 import Card from '@/components/ui/Card.astro';
 import ScheduleEditor from '@/components/ScheduleEditor';
 import { ensureProfile, GOAL_OPTIONS } from '@/lib/repos/profile';
+import { ensureDefaultGoals, findGoal } from '@/lib/repos/goals';
+import { READING_GOAL_ID } from '@/lib/goal-constants';
 
 export const prerender = false;
 
 const user = Astro.locals.user!;
 const profile = await ensureProfile(user.id);
+
+// La interfaz todavía edita un solo objetivo; los acordeones llegan en la Tanda D.
+await ensureDefaultGoals(user.id);
+const goal = (await findGoal({ userId: user.id, goalId: READING_GOAL_ID }))!;
 
 // `/app` manda aquí con ?onboarding=1 mientras el perfil no se haya guardado nunca.
 const onboarding = profile.onboardedAt === null;
@@ -26,9 +32,10 @@ const onboarding = profile.onboardedAt === null;
     <ScheduleEditor
       client:load
       initialName={user.name}
-      initialScheduledDays={profile.scheduledDays}
-      initialDailyGoalMinutes={profile.dailyGoalMinutes}
-      initialBookTitle={profile.currentBookTitle}
+      goalId={goal.goalId}
+      initialScheduledDays={goal.scheduledDays}
+      initialDailyGoalMinutes={goal.dailyGoalMinutes}
+      initialBookTitle={goal.metadata.type === 'reading' ? goal.metadata.bookTitle : null}
       initialTimezone={profile.timezone}
       goalOptions={GOAL_OPTIONS}
       onboarding={onboarding}

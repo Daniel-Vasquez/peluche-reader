@@ -1,5 +1,6 @@
 import type { DayOutcome, GameEventDoc, GameStateDoc } from '@/lib/db/types';
 import { dayKeysBetween, isoWeekdayOfDayKey, weekKeyFromDayKey, type IsoWeekday } from '@/lib/time';
+import type { GoalVocabulary } from './vocabulary';
 import { GAME } from './config';
 import { effectivePenalty } from './penalties';
 import { dogsForMinutes } from './rewards';
@@ -67,7 +68,11 @@ export function initialState(weekKey: string, dayKey: string): GameState {
   };
 }
 
-export function applyAction(state: GameState, action: GameAction): ApplyResult {
+export function applyAction(
+  state: GameState,
+  action: GameAction,
+  vocab: GoalVocabulary,
+): ApplyResult {
   const s: GameState = { ...state };
   const events: NewEvent[] = [];
 
@@ -100,7 +105,7 @@ export function applyAction(state: GameState, action: GameAction): ApplyResult {
           dayKey: action.dayKey,
           type: 'penalty',
           delta: -loss,
-          reason: 'Día programado sin lectura',
+          reason: vocab.missed,
           dogsAfter: s.dogs,
         });
       }
@@ -124,7 +129,7 @@ export function applyAction(state: GameState, action: GameAction): ApplyResult {
           dayKey: action.dayKey,
           type: 'reward',
           delta,
-          reason: `${action.minutesToday} min de lectura`,
+          reason: `${action.minutesToday} min ${vocab.activity}`,
           dogsAfter: s.dogs,
         });
 
@@ -164,6 +169,7 @@ export function reconcile(
   todayKey: string,
   scheduledDays: readonly IsoWeekday[],
   completedDays: ReadonlySet<string>,
+  vocab: GoalVocabulary,
 ): ReconcileResult {
   let s = state;
   const events: NewEvent[] = [];
@@ -174,7 +180,7 @@ export function reconcile(
 
     const weekKey = weekKeyFromDayKey(day);
     if (weekKey !== s.weekKey) {
-      const rolled = applyAction(s, { kind: 'rollover', weekKey, dayKey: day });
+      const rolled = applyAction(s, { kind: 'rollover', weekKey, dayKey: day }, vocab);
       s = rolled.state;
       events.push(...rolled.events);
     }
@@ -193,10 +199,11 @@ export function reconcile(
     }
 
     const isScheduled = scheduledDays.includes(isoWeekdayOfDayKey(day));
-    const applied = applyAction(s, {
-      kind: isScheduled ? 'miss' : 'rest',
-      dayKey: day,
-    });
+    const applied = applyAction(
+      s,
+      { kind: isScheduled ? 'miss' : 'rest', dayKey: day },
+      vocab,
+    );
     s = applied.state;
     events.push(...applied.events);
     days.push({ dayKey: day, outcome: isScheduled ? 'missed' : 'rest' });

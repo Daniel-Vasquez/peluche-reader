@@ -2796,28 +2796,44 @@ reason: `${action.minutesToday} min de lectura`,
 Eso sí es específico de lectura. Se resuelve **inyectando el vocabulario**, sin
 convertir el motor en un sistema de i18n:
 
+Vive en `src/lib/game/vocabulary.ts`:
+
 ```ts
-/** Textos que dependen del objetivo. Los aporta quien llama. */
 export interface GoalVocabulary {
-  /** "de lectura", "de inglés", "de estudio". */
+  /** Complemento de la actividad: "de lectura", "de inglés", "de estudio". */
   activity: string;
-  /** "Día programado sin leer", "Día programado sin practicar". */
+  /** Razón del día fallado: "Día programado sin leer". */
   missed: string;
 }
 
-export function applyAction(
-  state: GameState,
-  action: GameAction,
-  vocab: GoalVocabulary,
-): ApplyResult { … }
+const POR_TIPO: Record<GoalType, GoalVocabulary> = {
+  reading: { activity: 'de lectura', missed: 'Día programado sin leer' },
+  english: { activity: 'de inglés', missed: 'Día programado sin practicar inglés' },
+  study:   { activity: 'de estudio', missed: 'Día programado sin estudiar' },
+};
 ```
+
+`applyAction(state, action, vocab)` y `reconcile(…, vocab)` lo reciben; el
+servicio lo saca del **tipo** del objetivo con `vocabularyFor(goal.type)`.
+
+> **Parámetro obligatorio, sin valor por defecto.** Un `vocab = POR_TIPO.reading`
+> ahorraría tocar los 31 puntos de llamada de los tests, pero escondería un sesgo
+> hacia lectura: el día que alguien añada una acción nueva y olvide el argumento,
+> inglés registraría «sin leer» sin que nada avise.
 
 > **Por qué inyectar y no devolver claves.** La alternativa —que el motor emita
 > `reasonKey: 'reward'` y la UI lo traduzca— es más pura, pero obligaría a
 > migrar los `gameEvents` ya guardados, que almacenan `reason` como texto. La
 > inyección mantiene el historial existente legible sin tocarlo.
 
-### B.1 Repositorios: `userId` → `GoalRef`
+### ⚠️ Lo que la Tanda A ya se llevó
+
+La propagación mecánica a `GoalRef` se hizo en A, porque sin ella nada compilaba.
+**La Tanda B es lo que queda**: el vocabulario, `GET /api/goals`, y cerrar el
+agujero que A dejó abierto — `/ajustes` leía y escribía campos del perfil que ya
+no existen, así que guardar no hacía nada visible.
+
+### B.1 Repositorios: `userId` → `GoalRef` *(hecho en la Tanda A)*
 
 El cambio es mecánico y afecta a **todas** las funciones listadas en la Tanda 7:
 
@@ -2990,8 +3006,17 @@ produce **dos** documentos en `dailyProgress` y **dos** refugios distintos.
 - Fallar un día programado de Inglés **no** descuenta perritos de Lectura.
 - `grep -rn "{ userId" src/lib/repos/{progress,gameState,summary}.ts` queda
   **vacío** (hoy da 13 coincidencias).
-- Los 45 tests del motor siguen pasando **sin modificarlos**, salvo el parámetro
-  `vocab` añadido a `applyAction`.
+- **48 tests** (45 + 3 del vocabulario). A los existentes solo se les añadió el
+  argumento `VOCAB`; ninguna aserción numérica cambió.
+- Un test comprueba que **el mismo estado y la misma acción dan el mismo resultado
+  numérico** con cualquier vocabulario: las palabras no tocan el balance.
+- Ningún evento de inglés o estudio contiene «lectura» ni «leer»:
+  `gameEvents.find({ goalId: { $ne: 'reading' }, reason: /lectura|leer/ })` vacío.
+- `/ajustes` guarda en el **objetivo**: cambiar días y libro, recargar, y verlos
+  persistidos.
+- Un objetivo **puede** quedarse sin días (`PATCH scheduledDays: []` → 200): así se
+  desactiva sin archivarlo. Es la diferencia con el perfil de la Tanda 4.
+- Un `PATCH` con metadatos de otro tipo devuelve 400.
 - Intentar abrir una segunda sesión con otra ya corriendo devuelve la existente
   (lo garantiza ahora el índice parcial, no solo el código).
 
