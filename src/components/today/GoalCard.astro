@@ -1,0 +1,83 @@
+---
+import GoalIcon from '@/components/icons/GoalIcon.astro';
+import type { TodayGoalView } from '@/lib/today-view';
+
+/**
+ * Una tarjeta por objetivo del día.
+ *
+ * Componente Astro, no React: es un enlace con datos del servidor y no necesita
+ * estado. Cero JavaScript.
+ */
+interface Props {
+  goal: TodayGoalView;
+}
+
+const { goal } = Astro.props;
+
+const progreso = Math.min(1, goal.today.minutes / goal.dailyGoalMinutes);
+
+// El CTA dice lo que va a pasar, y cambia si hay una sesión a medias.
+const cta = goal.hasOpenSession
+  ? 'Retomar sesión'
+  : goal.today.completed
+    ? 'Seguir sumando'
+    : 'Empezar sesión';
+---
+
+<article class="rounded-card border border-border bg-surface p-5">
+  <div class="flex items-start gap-3">
+    <span class="mt-0.5 shrink-0 text-primary">
+      <GoalIcon type={goal.type} />
+    </span>
+
+    <div class="min-w-0 grow">
+      <h3 class="font-semibold">{goal.label}</h3>
+      {goal.context && <p class="truncate text-sm text-text-soft">{goal.context}</p>}
+    </div>
+
+    {
+      goal.today.completed && (
+        // El estado lleva símbolo y texto, nunca solo color.
+        <span class="shrink-0 text-sm font-medium text-primary">
+          <span aria-hidden>✓</span> Hecho
+        </span>
+      )
+    }
+  </div>
+
+  {/* Una razón contra un límite: un medidor, no una gráfica. */}
+  <div
+    role="meter"
+    aria-valuenow={goal.today.minutes}
+    aria-valuemin={0}
+    aria-valuemax={goal.dailyGoalMinutes}
+    aria-label={`${goal.label}: ${goal.today.minutes} de ${goal.dailyGoalMinutes} minutos`}
+    class="mt-4 h-2 w-full overflow-hidden rounded-full bg-muted"
+  >
+    <div
+      class="h-full rounded-full bg-primary transition-[width] duration-500"
+      style={`width:${progreso * 100}%`}
+    >
+    </div>
+  </div>
+
+  <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+    <p class="text-sm text-text-soft">
+      <span class="tabular-nums">{goal.today.minutes}</span> / {goal.dailyGoalMinutes} min
+      <span aria-hidden> · </span>
+      <span class="tabular-nums">{goal.shelter.dogs}</span> 🐶
+      <span class="sr-only">perritos en el refugio</span>
+    </p>
+
+    {/*
+      Enlace, no botón con `onClick`: así funciona con el ClientRouter, con
+      "abrir en pestaña nueva" y sin JavaScript.
+    */}
+    <a
+      href={`/sesion/${goal.goalId}`}
+      class="flex min-h-11 items-center rounded-card bg-primary px-4 text-sm font-medium text-on-primary transition hover:bg-primary-hover"
+    >
+      {cta}
+    </a>
+  </div>
+</article>

@@ -9,7 +9,11 @@ interface Props {
   shelter: ShelterView;
   /** Penalizaciones de esta visita. Se muestran una vez, sin dramatismo. */
   freshPenalties?: FreshPenalty[];
-  ownerName: string;
+  /**
+   * Encabezado del refugio. Por defecto "Tu refugio": en la pantalla de sesión
+   * el `<h1>` ya dice de qué objetivo se trata, así que repetirlo sobra.
+   */
+  title?: string;
 }
 
 /**
@@ -21,7 +25,7 @@ interface Props {
 export default function Shelter({
   shelter: initialShelter,
   freshPenalties = [],
-  ownerName,
+  title = 'Tu refugio',
 }: Props) {
   const [shelter, setShelter] = useState(initialShelter);
 
@@ -50,7 +54,7 @@ export default function Shelter({
   return (
     <div>
       <div className="flex items-baseline justify-between gap-4">
-        <h2 className="font-semibold">El refugio de {ownerName}</h2>
+        <h2 className="font-semibold">{title}</h2>
         <p className="text-sm text-text-soft tabular-nums">
           {dogs} de {capacity}
         </p>

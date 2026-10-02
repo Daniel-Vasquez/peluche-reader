@@ -1,0 +1,102 @@
+---
+import AppLayout from '@/layouts/AppLayout.astro';
+import Card from '@/components/ui/Card.astro';
+import GoalIcon from '@/components/icons/GoalIcon.astro';
+import SessionTimer from '@/components/SessionTimer';
+import Shelter from '@/components/Shelter';
+import { goalContext } from '@/lib/db/types';
+import { syncGoal } from '@/lib/game/service';
+import { findGoal } from '@/lib/repos/goals';
+import { ensureProfile } from '@/lib/repos/profile';
+import {
+  abandonStaleSessions,
+  completedSecondsForDay,
+  findOpenSession,
+  MIN_SESSION_SECONDS,
+} from '@/lib/repos/sessions';
+import { toSessionView } from '@/lib/sessions-view';
+import { dayKey } from '@/lib/time';
+
+export const prerender = false;
+
+const user = Astro.locals.user!;
+const { goalId } = Astro.params;
+
+const ref = { userId: user.id, goalId: goalId! };
+const goal = await findGoal(ref);
+// Un objetivo ajeno o inexistente es indistinguible: no se filtra que exista.
+if (!goal) return Astro.redirect('/app', 302);
+
+const now = new Date();
+const profile = await ensureProfile(user.id);
+const snapshot = (await syncGoal(ref, now))!;
+
+// Cierra lo que quedó abierto hace horas antes de ofrecer retomar una sesión.
+await abandonStaleSessions(user.id, now);
+const openSession = await findOpenSession(user.id);
+
+/*
+ * Caso nuevo del multi-objetivo: hay un cronómetro corriendo, pero de OTRO
+ * objetivo. No se puede leer y estudiar a la vez, así que en vez de ofrecer un
+ * "Empezar" que fallaría, se enseña el camino a la sesión en curso.
+ */
+const sesionDeOtro = openSession && openSession.goalId !== goal.goalId ? openSession : null;
+const propia = openSession && openSession.goalId === goal.goalId ? openSession : null;
+
+const otroGoal = sesionDeOtro ? await findGoal({ userId: user.id, goalId: sesionDeOtro.goalId }) : null;
+
+const todayKey = dayKey(now, profile.timezone);
+const daySeconds = await completedSecondsForDay(ref, todayKey);
+---
+
+<AppLayout title={goal.label} heading={goal.label} subheading={goalContext(goal.metadata) ?? undefined}>
+  <p class="mb-4">
+    <a href="/app" class="text-sm font-medium text-primary hover:underline">← Volver a hoy</a>
+  </p>
+
+  {
+    sesionDeOtro ? (
+      <Card>
+        <div class="flex items-start gap-3">
+          <span class="mt-0.5 shrink-0 text-alert-text">
+            {otroGoal && <GoalIcon type={otroGoal.type} />}
+          </span>
+          <div>
+            <h2 class="font-semibold">Ya tienes una sesión abierta</h2>
+            <p class="mt-1 text-text-soft">
+              El cronómetro está corriendo en <strong class="text-text">{otroGoal?.label}</strong>.
+              Solo puede haber una sesión a la vez: termínala antes de empezar esta.
+            </p>
+            <a
+              href={`/sesion/${sesionDeOtro.goalId}`}
+              class="mt-4 inline-flex min-h-11 items-center rounded-card bg-primary px-4 text-sm font-medium text-on-primary transition hover:bg-primary-hover"
+            >
+              Ir a la sesión de {otroGoal?.label}
+            </a>
+          </div>
+        </div>
+      </Card>
+    ) : (
+      <Card>
+        <SessionTimer
+          client:load
+          initialSession={propia ? toSessionView(propia, now) : null}
+          goalId={goal.goalId}
+          goalLabel={goal.label}
+          contextLabel={goalContext(goal.metadata)}
+          dailyGoalMinutes={goal.dailyGoalMinutes}
+          minSessionSeconds={MIN_SESSION_SECONDS}
+          initialDaySeconds={daySeconds}
+        />
+      </Card>
+    )
+  }
+
+  <Card class="mt-4">
+    <Shelter
+      client:load
+      shelter={snapshot.shelter}
+      freshPenalties={snapshot.freshPenalties}
+    />
+  </Card>
+</AppLayout>

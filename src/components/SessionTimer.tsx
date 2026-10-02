@@ -15,6 +15,8 @@ interface Props {
   initialSession: SessionView | null;
   /** Objetivo al que pertenece la sesión. Lo exige `/api/sessions/start`. */
   goalId: string;
+  /** Nombre del objetivo, para que los textos no digan "leer" en Inglés. */
+  goalLabel: string;
   /** Libro, curso o tema: el metadato del objetivo, ya resuelto por el servidor. */
   contextLabel: string | null;
   dailyGoalMinutes: number;
@@ -32,9 +34,10 @@ function phaseOf(session: SessionView | null): Phase {
   return 'finished';
 }
 
-export default function ReadingTimer({
+export default function SessionTimer({
   initialSession,
   goalId,
+  goalLabel,
   contextLabel: _contextLabel,
   dailyGoalMinutes,
   minSessionSeconds,
@@ -258,8 +261,8 @@ export default function ReadingTimer({
       )}
 
       <p role="status" className="mt-4 min-h-6 text-sm text-text-soft">
-        {phase === 'idle' && lastResult === null && 'Cuando quieras, empieza a leer.'}
-        {phase === 'running' && 'Leyendo…'}
+        {phase === 'idle' && lastResult === null && 'Cuando quieras, empieza.'}
+        {phase === 'running' && 'En marcha…'}
         {phase === 'paused' && 'En pausa. El tiempo no corre.'}
         {lastResult !== null &&
           (lastResult.counted
@@ -298,7 +301,7 @@ export default function ReadingTimer({
       <div className="mt-5 flex flex-wrap justify-center gap-3">
         {phase === 'idle' ? (
           <Button onClick={handleStart} disabled={busy}>
-            {busy ? 'Abriendo…' : 'Empezar a leer'}
+            {busy ? 'Abriendo…' : `Empezar ${goalLabel.toLowerCase()}`}
           </Button>
         ) : (
           <>

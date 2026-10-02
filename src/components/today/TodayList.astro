@@ -1,0 +1,25 @@
+---
+import GoalCard from '@/components/today/GoalCard.astro';
+import type { TodayGoalView } from '@/lib/today-view';
+
+interface Props {
+  goals: TodayGoalView[];
+}
+
+const { goals } = Astro.props;
+
+// Lo pendiente primero: es lo que el usuario viene a resolver.
+const ordenados = [...goals].sort(
+  (a, b) => Number(a.today.completed) - Number(b.today.completed),
+);
+---
+
+<ul class="grid gap-4 sm:grid-cols-2">
+  {
+    ordenados.map((goal) => (
+      <li>
+        <GoalCard goal={goal} />
+      </li>
+    ))
+  }
+</ul>

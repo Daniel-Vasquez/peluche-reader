@@ -3264,21 +3264,27 @@ Y `handleStart` manda el objetivo:
 > El `bookTitle` ya no viaja desde el cliente: el servidor lo toma del objetivo.
 > Un cliente no debería poder decidir con qué contexto se guarda una sesión.
 
-### Qué necesito de tu lado
-Decidir los **iconos** de cada objetivo (`GoalIcon.astro`). Propuesta, siguiendo
-los de Lucide que ya usa la navegación: `book-open` (Lectura), `languages`
-(Inglés), `graduation-cap` (Estudio).
+### Iconos
+`GoalIcon.astro`, con los trazados de Lucide que ya usa la navegación:
+`book-open` (Lectura), `languages` (Inglés), `graduation-cap` (Estudio).
 
 ### Criterio de aceptación
-- Con Lectura los lunes e Inglés los martes, el lunes `/app` muestra **una**
-  tarjeta y el martes **otra distinta**.
-- Un día sin objetivos programados muestra `TodayEmpty`, no una lista vacía.
-- El CTA lleva a `/sesion/reading`, y esa pantalla arranca el cronómetro de ese
-  objetivo.
+Verificado en Chrome:
+
+- Con Lectura e Inglés programados hoy y Estudio sin días, `/app` muestra
+  **2 tarjetas** y el subtítulo «Tienes 2 objetivos por delante».
+- Un día sin ningún objetivo programado muestra `TodayEmpty`: **0 tarjetas** y
+  «Hoy es día libre en todos tus objetivos».
+- El CTA de Inglés lleva a `/sesion/english`, cuyo `<h1>` dice «Inglés», el
+  subtítulo el curso, y el botón **«Empezar inglés»** — no «Empezar a leer».
+- Con una sesión corriendo en Inglés, entrar a `/sesion/reading` muestra
+  «Ya tienes una sesión abierta», ofrece el enlace a la sesión en curso y **no**
+  muestra ningún botón de *Empezar*.
 - `/sesion/no-existe` redirige a `/app` sin filtrar si el objetivo existe.
-- Con una sesión corriendo en un objetivo, entrar a otro muestra el aviso y **no**
-  ofrece *Empezar*.
-- `/app` no carga JavaScript de tarjetas: son componentes Astro.
+- `/app` carga **2 islas** (toggle de tema y Salir, ambas de la cabecera): las
+  tarjetas son Astro puro.
+- El CTA refleja el estado: «Empezar sesión», «Retomar sesión» con una sesión
+  abierta de ese objetivo, «Seguir sumando» si ya alcanzó el umbral.
 
 ---
 

@@ -1,115 +1,45 @@
 ---
 import AppLayout from '@/layouts/AppLayout.astro';
-import Card from '@/components/ui/Card.astro';
-import Stat from '@/components/ui/Stat.astro';
-import ReadingTimer from '@/components/ReadingTimer';
-import Shelter from '@/components/Shelter';
-import { syncAllGoals, syncGoal } from '@/lib/game/service';
-import { findGoal } from '@/lib/repos/goals';
-import { READING_GOAL_ID } from '@/lib/goal-constants';
+import TodayEmpty from '@/components/today/TodayEmpty.astro';
+import TodayList from '@/components/today/TodayList.astro';
+import { syncAllGoals } from '@/lib/game/service';
 import { ensureProfile } from '@/lib/repos/profile';
-import {
-  abandonStaleSessions,
-  findOpenSession,
-  MIN_SESSION_SECONDS,
-} from '@/lib/repos/sessions';
-import { toSessionView } from '@/lib/sessions-view';
+import { buildTodayView } from '@/lib/today-view';
 import { firstName } from '@/lib/name';
-import { WEEKDAY_LABELS, formatDuration } from '@/lib/time';
+import { dayKey, isoWeekday } from '@/lib/time';
 
 export const prerender = false;
 
 const user = Astro.locals.user!;
 const profile = await ensureProfile(user.id);
 
-// Sin días comprometidos la gamificación no puede penalizar ni recompensar,
-// así que el onboarding es obligatorio antes de ver el resto de la app.
 if (profile.onboardedAt === null) {
   return Astro.redirect('/ajustes?onboarding=1', 302);
 }
 
 const now = new Date();
 
-// Reconcilia TODOS los objetivos: las penalizaciones de uno no pueden depender
-// de que el usuario abra su pantalla.
+// Reconcilia TODOS los objetivos antes de pintar: las penalizaciones de uno no
+// pueden depender de que el usuario abra su pantalla.
 await syncAllGoals(user.id, now);
 
-// La interfaz todavía es de un solo hábito; la Vista de Hoy llega en la Tanda C.
-const ref = { userId: user.id, goalId: READING_GOAL_ID };
-const goal = await findGoal(ref);
-if (!goal) return Astro.redirect('/ajustes', 302);
-const snapshot = (await syncGoal(ref, now))!;
+const todayKey = dayKey(now, profile.timezone);
+const weekday = isoWeekday(now, profile.timezone);
+const goals = await buildTodayView(user.id, weekday, todayKey);
 
-// Cierra lo que quedó abierto hace horas antes de ofrecer retomar una sesión:
-// si no, el usuario vería un cronómetro con el tiempo que pasó durmiendo.
-await abandonStaleSessions(user.id, now);
-const openSession = await findOpenSession(user.id);
-
+const pendientes = goals.filter((g) => !g.today.completed);
 const greeting = firstName(user.name);
-const scheduledLabels = goal.scheduledDays.map((d) => WEEKDAY_LABELS[d].short);
-const { shelter, today } = snapshot;
+
+const subheading =
+  goals.length === 0
+    ? 'Hoy es día libre en todos tus objetivos.'
+    : pendientes.length === 0
+      ? '¡Todo hecho por hoy!'
+      : pendientes.length === goals.length
+        ? `Tienes ${goals.length} ${goals.length === 1 ? 'objetivo' : 'objetivos'} por delante.`
+        : `Te ${pendientes.length === 1 ? 'queda' : 'quedan'} ${pendientes.length} de ${goals.length}.`;
 ---
 
-<AppLayout
-  title="Hoy"
-  heading={`Hola, ${greeting}`}
-  subheading={
-    today.scheduled
-      ? 'Hoy te comprometiste a leer.'
-      : 'Hoy es día libre: no leer no te cuesta ningún perrito.'
-  }
->
-  <Card>
-    <Shelter
-      client:load
-      shelter={shelter}
-      freshPenalties={snapshot.freshPenalties}
-      ownerName={user.name}
-    />
-  </Card>
-
-  <Card class="mt-4">
-    <ReadingTimer
-      client:load
-      initialSession={openSession ? toSessionView(openSession, now) : null}
-      goalId={goal.goalId}
-      contextLabel={goal.metadata.type === 'reading' ? goal.metadata.bookTitle : null}
-      dailyGoalMinutes={goal.dailyGoalMinutes}
-      minSessionSeconds={MIN_SESSION_SECONDS}
-      initialDaySeconds={today.totalSeconds}
-    />
-
-    {
-      goal.metadata.type === 'reading' && goal.metadata.bookTitle && (
-        <p class="mt-6 border-t border-border pt-4 text-center text-sm text-text-soft">
-          Estás leyendo <span class="font-medium text-text">{goal.metadata.bookTitle}</span>
-        </p>
-      )
-    }
-  </Card>
-
-  <dl class="mt-4 grid gap-4 sm:grid-cols-3">
-    <Stat
-      label="Tu compromiso"
-      value={scheduledLabels.join(' · ')}
-      hint={`${goal.scheduledDays.length} días a la semana`}
-      tone="primary"
-    />
-    <Stat
-      label="Leído hoy"
-      value={formatDuration(today.totalSeconds)}
-      hint={
-        today.dogsAwarded > 0
-          ? `${today.dogsAwarded} ${today.dogsAwarded === 1 ? 'perrito' : 'perritos'} ganados hoy`
-          : `meta de ${goal.dailyGoalMinutes} min`
-      }
-      tone="accent"
-    />
-    <Stat
-      label="Hoy"
-      value={today.scheduled ? 'Día de lectura' : 'Día libre'}
-      hint={today.dayKey}
-      tone={today.scheduled ? 'primary' : 'neutral'}
-    />
-  </dl>
+<AppLayout title="Hoy" heading={`Hola, ${greeting}`} subheading={subheading}>
+  {goals.length === 0 ? <TodayEmpty /> : <TodayList goals={goals} />}
 </AppLayout>

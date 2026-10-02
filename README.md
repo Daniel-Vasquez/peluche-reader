@@ -143,14 +143,16 @@ src/
 │   │   └── __tests__/       45 tests, incluida una prueba de fuzz
 │   └── repos/               profile · sessions · progress · gameState · summary
 ├── components/              ui/ · auth/ · charts/ · icons/
-│                            ReadingTimer · Shelter · ScheduleEditor · ThemeToggle
+│                            today/ · SessionTimer · Shelter · ScheduleEditor
+│                            ThemeToggle
 ├── layouts/                 BaseLayout · AuthLayout · AppLayout
 ├── styles/global.css        tokens de color de los dos temas
 ├── env.d.ts                 tipos de Astro.locals
 └── pages/
     ├── index.astro          landing (reconoce si hay sesión)
     ├── login · registro
-    ├── app.astro            cronómetro + refugio
+    ├── app.astro            Vista de Hoy: los objetivos que tocan
+    ├── sesion/[goalId]      cronómetro + refugio de un objetivo
     ├── progreso.astro       dashboard
     ├── ajustes.astro        nombre, días, meta, libro
     ├── 404 · 500
@@ -274,7 +276,7 @@ perritos.
 - [x] **Tanda A** · Esquema multi-objetivo: colección `goals`, `goalId` en todas
       las colecciones de datos, migración y respaldo
 - [x] **Tanda B** · Vocabulario por tipo de objetivo, `/api/goals` y ajustes por objetivo
-- [ ] **Tanda C** · «Vista de Hoy» en `/app` y cronómetro en `/sesion/[goalId]`
+- [x] **Tanda C** · «Vista de Hoy» en `/app` y cronómetro en `/sesion/[goalId]`
 - [ ] **Tanda D** · `/progreso` por pestañas y `/ajustes` por acordeones
 - [ ] **Tanda E** · Archivado de objetivos, semilla multi-objetivo y limpieza
 
