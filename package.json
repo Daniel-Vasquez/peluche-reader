@@ -12,6 +12,8 @@
     "astro": "astro",
     "typecheck": "tsc --noEmit",
     "db:init": "tsx scripts/db-init.ts",
+    "db:dump": "tsx scripts/db-dump.ts",
+    "db:restore": "tsx scripts/db-restore.ts",
     "db:reset": "tsx scripts/db-reset.ts",
     "db:seed": "tsx scripts/db-seed.ts",
     "test": "vitest run",
