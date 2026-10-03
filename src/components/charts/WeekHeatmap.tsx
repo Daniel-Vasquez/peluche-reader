@@ -5,12 +5,14 @@ import { WEEKDAY_LABELS, type IsoWeekday } from '@/lib/time';
 
 interface Props {
   weeks: WeekRow[];
+  /** "de lectura", "de inglés", "de estudio": el vocabulario del objetivo. */
+  activity: string;
 }
 
 const DAYS: IsoWeekday[] = [1, 2, 3, 4, 5, 6, 7];
 
 /**
- * Ocho semanas de lectura en rejilla.
+ * Ocho semanas de actividad en rejilla.
  *
  * Aquí el color **es** el dato, así que usa la rampa secuencial de verdad: un
  * solo tono, más magnitud = más oscuro (más claro en tema oscuro). La leyenda
@@ -18,7 +20,7 @@ const DAYS: IsoWeekday[] = [1, 2, 3, 4, 5, 6, 7];
  *
  * Se construye con CSS en vez de Recharts: es una rejilla, no un sistema de ejes.
  */
-export default function WeekHeatmap({ weeks }: Props) {
+export default function WeekHeatmap({ weeks, activity }: Props) {
   const theme = useChartTheme();
   const [hovered, setHovered] = useState<DayPoint | null>(null);
 
@@ -55,7 +57,7 @@ export default function WeekHeatmap({ weeks }: Props) {
                     // El nombre accesible lleva el dato completo: el color nunca
                     // es el único canal.
                     aria-label={`${day.dayKey}: ${day.minutes} minutos${
-                      missed ? ', día programado sin leer' : ''
+                      missed ? ', día programado sin cumplir' : ''
                     }`}
                     className="grid h-7 w-7 place-items-center rounded-[4px] text-[10px] leading-none transition sm:h-8 sm:w-8"
                     style={{
@@ -84,7 +86,7 @@ export default function WeekHeatmap({ weeks }: Props) {
             className="inline-block h-3 w-3 rounded-[3px]"
             style={{ backgroundColor: theme.empty }}
           />
-          Sin leer
+          Sin actividad
         </span>
         {theme.ramp.map((color, i) => (
           <span key={color} className="flex items-center gap-1.5">
@@ -100,7 +102,7 @@ export default function WeekHeatmap({ weeks }: Props) {
           <span aria-hidden style={{ color: theme.alertText }}>
             ✕
           </span>
-          Día programado sin leer
+          Día programado sin cumplir
         </span>
       </div>
 
@@ -108,7 +110,7 @@ export default function WeekHeatmap({ weeks }: Props) {
         {hovered
           ? `${hovered.dayKey}: ${hovered.minutes} min${
               hovered.dogsAwarded > 0 ? ` · ${hovered.dogsAwarded} 🐶` : ''
-            }${hovered.outcome === 'missed' ? ' · día programado sin leer' : ''}`
+            }${hovered.outcome === 'missed' ? ' · día programado sin cumplir' : ''}`
           : ''}
       </p>
     </div>

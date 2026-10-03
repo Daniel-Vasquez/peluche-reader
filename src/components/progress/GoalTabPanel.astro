@@ -1,0 +1,26 @@
+---
+/**
+ * El panel de una pestaña. Se renderiza en el servidor y nace `hidden` salvo el
+ * activo; las islas que lleve dentro con `client:visible` no hidratan hasta que
+ * `GoalTabs` le quita el `hidden`, porque un elemento oculto no tiene caja y no
+ * llega a intersectar.
+ */
+interface Props {
+  id: string;
+  activo: boolean;
+}
+
+const { id, activo } = Astro.props;
+---
+
+<div
+  role="tabpanel"
+  id={`panel-${id}`}
+  aria-labelledby={`tab-${id}`}
+  data-panel={id}
+  tabindex="0"
+  hidden={!activo}
+  class="pt-6"
+>
+  <slot />
+</div>

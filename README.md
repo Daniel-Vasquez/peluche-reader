@@ -277,7 +277,7 @@ perritos.
       las colecciones de datos, migración y respaldo
 - [x] **Tanda B** · Vocabulario por tipo de objetivo, `/api/goals` y ajustes por objetivo
 - [x] **Tanda C** · «Vista de Hoy» en `/app` y cronómetro en `/sesion/[goalId]`
-- [ ] **Tanda D** · `/progreso` por pestañas y `/ajustes` por acordeones
+- [x] **Tanda D** · `/progreso` por pestañas y `/ajustes` por acordeones
 - [ ] **Tanda E** · Archivado de objetivos, semilla multi-objetivo y limpieza
 
 El motor de gamificación **no cambia**: es puro y opera sobre un `GameState`, así

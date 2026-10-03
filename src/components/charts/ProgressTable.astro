@@ -4,13 +4,15 @@ import type { DayOutcome } from '@/lib/db/types';
 
 interface Props {
   daily: DayPoint[];
+  /** "de lectura", "de inglés", "de estudio": el vocabulario del objetivo. */
+  activity: string;
 }
 
-const { daily } = Astro.props;
+const { daily, activity } = Astro.props;
 
 const OUTCOME_LABEL: Record<DayOutcome, string> = {
   completed: 'Cumplido',
-  missed: 'Programado sin leer',
+  missed: 'Programado sin cumplir',
   rest: 'Día libre',
   pending: 'En curso',
 };
@@ -33,7 +35,7 @@ const rows = [...daily].reverse();
   <div class="max-h-96 overflow-auto border-t border-border">
     <table class="w-full text-sm">
       <caption class="sr-only">
-        Minutos leídos, perritos ganados y resultado de cada día
+        Minutos {activity}, perritos ganados y resultado de cada día
       </caption>
       <thead class="sticky top-0 bg-surface text-left text-text-soft">
         <tr class="border-b border-border">

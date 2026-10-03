@@ -1,0 +1,101 @@
+---
+import Card from '@/components/ui/Card.astro';
+import Stat from '@/components/ui/Stat.astro';
+import AdherenceMeter from '@/components/charts/AdherenceMeter';
+import DogsAreaChart from '@/components/charts/DogsAreaChart';
+import EventTimeline from '@/components/charts/EventTimeline.astro';
+import MinutesBarChart from '@/components/charts/MinutesBarChart';
+import ProgressTable from '@/components/charts/ProgressTable.astro';
+import WeekHeatmap from '@/components/charts/WeekHeatmap';
+import type { ProgressSummary } from '@/lib/progress-summary';
+
+/**
+ * Todo el progreso de UN objetivo. Es el contenido de una pestaña.
+ *
+ * Recibe el resumen ya construido: el panel no consulta nada, así que puede
+ * renderizarse para los tres objetivos sin multiplicar el trabajo del servidor
+ * más allá de las tres agregaciones que ya hace la página.
+ */
+interface Props {
+  summary: ProgressSummary;
+  label: string;
+  dailyGoalMinutes: number;
+  /** Vocabulario del objetivo, para que las gráficas no digan "leer" en Inglés. */
+  activity: string;
+}
+
+const { summary, label, dailyGoalMinutes, activity } = Astro.props;
+const { totals, shelter } = summary;
+const last14 = summary.daily.slice(-14);
+---
+
+{
+  summary.empty ? (
+    <Card>
+      <p class="text-text-soft">
+        Todavía no hay nada que medir en {label}. Empieza tu primera sesión en{' '}
+        <a class="font-medium text-primary hover:underline" href="/app">
+          Hoy
+        </a>
+        .
+      </p>
+    </Card>
+  ) : (
+    <>
+      <dl class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat
+          label="Perritos"
+          value={`${shelter.dogs} de ${shelter.capacity}`}
+          hint={`${shelter.adopted} adoptados`}
+          tone="primary"
+        />
+        <Stat label="Racha" value={shelter.streak} hint={`récord de ${shelter.bestStreak}`} tone="accent" />
+        <Stat
+          label="Esta semana"
+          value={`${totals.minutesThisWeek} min`}
+          hint={`${totals.minutesAllTime} min en total`}
+        />
+        <Stat
+          label="Margen semanal"
+          value={shelter.weeklyLossCap - shelter.weekLosses}
+          hint={`de ${shelter.weeklyLossCap} ${shelter.weeklyLossCap === 1 ? 'perrito' : 'perritos'}`}
+          tone={shelter.weekLosses >= shelter.weeklyLossCap ? 'alert' : 'neutral'}
+        />
+      </dl>
+
+      <Card title="Adherencia a tu compromiso" class="mt-4">
+        <AdherenceMeter
+          client:visible
+          adherence={totals.adherence}
+          completed={totals.completedScheduled}
+          total={totals.scheduledClosed}
+        />
+      </Card>
+
+      <Card title="Minutos por día" class="mt-4">
+        <p class="mb-3 text-sm text-text-soft">Últimos 14 días.</p>
+        <MinutesBarChart
+          client:visible
+          data={last14}
+          goalMinutes={dailyGoalMinutes}
+          activity={activity}
+        />
+      </Card>
+
+      <Card title="Perritos en el refugio" class="mt-4">
+        <p class="mb-3 text-sm text-text-soft">Últimos 30 días.</p>
+        <DogsAreaChart client:visible data={summary.dogsTimeline} capacity={shelter.capacity} />
+      </Card>
+
+      <Card title="Ocho semanas" class="mt-4">
+        <WeekHeatmap client:visible weeks={summary.weeks} activity={activity} />
+      </Card>
+
+      <Card title="Movimientos recientes" class="mt-4">
+        <EventTimeline events={summary.events} />
+      </Card>
+
+      <ProgressTable daily={summary.daily} activity={activity} />
+    </>
+  )
+}

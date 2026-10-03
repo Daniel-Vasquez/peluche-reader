@@ -15,6 +15,8 @@ import type { DayPoint } from '@/lib/progress-summary';
 interface Props {
   data: DayPoint[];
   goalMinutes: number;
+  /** "de lectura", "de inglés", "de estudio": el vocabulario del objetivo. */
+  activity: string;
 }
 
 /**
@@ -28,7 +30,7 @@ interface Props {
  * Los días programados sin leer se marcan con el color de estado, que **nunca va
  * solo**: llevan etiqueta en la leyenda de estado y el dato en el tooltip.
  */
-export default function MinutesBarChart({ data, goalMinutes }: Props) {
+export default function MinutesBarChart({ data, goalMinutes, activity }: Props) {
   const theme = useChartTheme();
   const missed = data.filter((d) => d.outcome === 'missed').length;
 
@@ -67,7 +69,7 @@ export default function MinutesBarChart({ data, goalMinutes }: Props) {
                       color: point.outcome === 'missed' ? theme.alert : theme.mark,
                       note:
                         point.outcome === 'missed'
-                          ? 'día programado sin leer'
+                          ? 'día programado sin cumplir'
                           : point.dogsAwarded > 0
                             ? `${point.dogsAwarded} 🐶`
                             : point.scheduled
@@ -98,7 +100,7 @@ export default function MinutesBarChart({ data, goalMinutes }: Props) {
             className="inline-block h-2.5 w-2.5 rounded-sm"
             style={{ backgroundColor: theme.mark }}
           />
-          Minutos leídos
+          Minutos {activity}
         </span>
         {missed > 0 && (
           <span className="flex items-center gap-1.5">
@@ -108,7 +110,7 @@ export default function MinutesBarChart({ data, goalMinutes }: Props) {
               style={{ backgroundColor: theme.alert }}
             />
             <span aria-hidden>✕</span> {missed} día{missed === 1 ? '' : 's'} programado
-            {missed === 1 ? '' : 's'} sin leer
+            {missed === 1 ? '' : 's'} sin cumplir
           </span>
         )}
         <span>Meta: {goalMinutes} min</span>

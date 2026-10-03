@@ -1,0 +1,66 @@
+---
+import GoalIcon from '@/components/icons/GoalIcon.astro';
+import GoalSettingsForm from '@/components/settings/GoalSettingsForm';
+import { goalContext, type GoalDoc } from '@/lib/db/types';
+import { GOAL_OPTIONS } from '@/lib/repos/profile';
+import { WEEKDAY_LABELS } from '@/lib/time';
+
+/**
+ * Un objetivo plegado.
+ *
+ * **Sin JavaScript**: `<details>`/`<summary>` ya dan apertura, cierre, teclado y
+ * semántica de accesibilidad. Montar un acordeón en React sería reimplementar
+ * peor lo que el navegador trae.
+ *
+ * Y tiene un beneficio extra: dentro de un `<details>` cerrado el contenido no
+ * tiene caja, así que la isla `client:visible` del formulario **no hidrata hasta
+ * que se abre**. Con tres objetivos, eso son dos islas que no se montan.
+ */
+interface Props {
+  goal: GoalDoc;
+  abierto?: boolean;
+}
+
+const { goal, abierto = false } = Astro.props;
+
+const contexto = goalContext(goal.metadata);
+const dias =
+  goal.scheduledDays.length === 0
+    ? 'Sin días · inactivo'
+    : goal.scheduledDays.map((d) => WEEKDAY_LABELS[d].short).join(' · ');
+---
+
+<details open={abierto} class="group rounded-card border border-border bg-surface">
+  <summary
+    class="flex min-h-11 cursor-pointer list-none items-center gap-3 px-5 py-3 [&::-webkit-details-marker]:hidden"
+  >
+    <span class="shrink-0 text-primary">
+      <GoalIcon type={goal.type} />
+    </span>
+
+    <span class="min-w-0 grow">
+      <span class="font-medium">{goal.label}</span>
+      {/* El resumen plegado dice lo esencial sin tener que abrirlo. */}
+      <span class="block truncate text-sm text-text-soft">
+        {dias}{contexto && ` · ${contexto}`}
+      </span>
+    </span>
+
+    <span aria-hidden class="shrink-0 text-text-soft transition-transform group-open:rotate-180">
+      ⌄
+    </span>
+  </summary>
+
+  <div class="border-t border-border px-5 py-5">
+    <GoalSettingsForm
+      client:visible
+      goalId={goal.goalId}
+      type={goal.type}
+      label={goal.label}
+      scheduledDays={goal.scheduledDays}
+      dailyGoalMinutes={goal.dailyGoalMinutes}
+      metadata={goal.metadata}
+      goalOptions={GOAL_OPTIONS}
+    />
+  </div>
+</details>

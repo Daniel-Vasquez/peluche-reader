@@ -1,0 +1,118 @@
+---
+import GoalIcon from '@/components/icons/GoalIcon.astro';
+import type { GoalType } from '@/lib/db/types';
+
+/**
+ * Pestañas por objetivo.
+ *
+ * **En Astro con un script en línea, no en React.** El motivo es concreto: los
+ * paneles contienen islas `client:visible` con Recharts. Si las pestañas fueran
+ * un componente React y recibieran los paneles como hijos, habría que forzar
+ * `client:load` y montar Recharts tantas veces como objetivos haya, de golpe.
+ *
+ * Así los paneles se renderizan en el servidor y, al quitarles `hidden`, su
+ * `IntersectionObserver` dispara y la gráfica hidrata **solo entonces**. Un panel
+ * oculto no tiene caja, así que nunca intersecta: es justo el comportamiento que
+ * se busca.
+ *
+ * Los paneles llegan por el slot **por defecto**, como `<GoalTabPanel>`, y no
+ * por slots con nombre. No es un capricho: un `slot={`panel-${goal.goalId}`}`
+ * dentro de un `.map()` revienta en ejecución con `goal is not defined`, porque
+ * Astro saca la expresión del nombre fuera del closure del bucle. El error no
+ * aparece en `astro build`; solo al pedir la página.
+ */
+interface Props {
+  tabs: { id: string; label: string; type: GoalType }[];
+}
+
+const { tabs } = Astro.props;
+---
+
+<div class="goal-tabs">
+  <div
+    role="tablist"
+    aria-label="Objetivos"
+    class="flex gap-1 overflow-x-auto border-b border-border"
+  >
+    {
+      tabs.map((tab, i) => (
+        <button
+          type="button"
+          role="tab"
+          id={`tab-${tab.id}`}
+          aria-controls={`panel-${tab.id}`}
+          aria-selected={i === 0 ? 'true' : 'false'}
+          {...(i === 0 ? {} : { tabindex: -1 })}
+          data-tab={tab.id}
+          class:list={[
+            'flex min-h-11 shrink-0 items-center gap-2 rounded-t-card border-b-2 px-4 text-sm font-medium transition',
+            i === 0
+              ? 'border-primary text-primary'
+              : 'border-transparent text-text-soft hover:text-text',
+          ]}
+        >
+          <GoalIcon type={tab.type} class="h-4 w-4" />
+          {tab.label}
+        </button>
+      ))
+    }
+  </div>
+
+  <slot />
+</div>
+
+<script>
+  /**
+   * Patrón ARIA de pestañas completo. Las flechas no son opcionales: sin ellas
+   * una lista de pestañas es un grupo de botones con aspecto de pestañas.
+   *
+   * Se registra en `astro:page-load` para que siga funcionando tras una
+   * navegación del ClientRouter, que reemplaza el body.
+   */
+  function montarPestañas() {
+    for (const grupo of document.querySelectorAll<HTMLElement>('.goal-tabs')) {
+      const tabs = [...grupo.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+      if (tabs.length === 0) continue;
+
+      const activar = (destino: HTMLButtonElement, mover = true) => {
+        for (const tab of tabs) {
+          const seleccionada = tab === destino;
+          tab.setAttribute('aria-selected', String(seleccionada));
+          // Tabindex itinerante: solo la pestaña activa está en el orden de
+          // tabulación; desde ella se navega con las flechas.
+          tab.tabIndex = seleccionada ? 0 : -1;
+          tab.classList.toggle('border-primary', seleccionada);
+          tab.classList.toggle('text-primary', seleccionada);
+          tab.classList.toggle('border-transparent', !seleccionada);
+          tab.classList.toggle('text-text-soft', !seleccionada);
+
+          const panel = grupo.querySelector<HTMLElement>(
+            `[data-panel="${tab.dataset.tab}"]`,
+          );
+          // Al quitar `hidden`, la isla `client:visible` del panel hidrata.
+          if (panel) panel.hidden = !seleccionada;
+        }
+        if (mover) destino.focus();
+      };
+
+      for (const [i, tab] of tabs.entries()) {
+        tab.addEventListener('click', () => activar(tab, false));
+        tab.addEventListener('keydown', (evento) => {
+          const delta =
+            evento.key === 'ArrowRight' ? 1 : evento.key === 'ArrowLeft' ? -1 : 0;
+          let destino = i;
+          if (delta !== 0) destino = (i + delta + tabs.length) % tabs.length;
+          else if (evento.key === 'Home') destino = 0;
+          else if (evento.key === 'End') destino = tabs.length - 1;
+          else return;
+
+          evento.preventDefault();
+          activar(tabs[destino]!);
+        });
+      }
+    }
+  }
+
+  montarPestañas();
+  document.addEventListener('astro:page-load', montarPestañas);
+</script>
