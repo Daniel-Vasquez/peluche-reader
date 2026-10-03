@@ -1,13 +1,16 @@
 ---
 import AppLayout from '@/layouts/AppLayout.astro';
 import Card from '@/components/ui/Card.astro';
+import ArchivedGoals from '@/components/progress/ArchivedGoals.astro';
 import GoalProgressPanel from '@/components/progress/GoalProgressPanel.astro';
 import GoalTabPanel from '@/components/progress/GoalTabPanel.astro';
 import GoalTabs from '@/components/progress/GoalTabs.astro';
 import { syncAllGoals } from '@/lib/game/service';
 import { vocabularyFor } from '@/lib/game/vocabulary';
-import { listGoals } from '@/lib/repos/goals';
+import { listArchivedGoals, listGoals } from '@/lib/repos/goals';
+import { ensureProfile } from '@/lib/repos/profile';
 import { buildProgressSummary } from '@/lib/repos/summary';
+import { dayKey } from '@/lib/time';
 
 export const prerender = false;
 
@@ -17,6 +20,7 @@ const user = Astro.locals.user!;
 // /progreso sin pasar por /app, y vería cifras sin las penalizaciones al día.
 await syncAllGoals(user.id);
 
+const profile = await ensureProfile(user.id);
 const goals = await listGoals(user.id);
 const resumenes = await Promise.all(
   goals.map(async (goal) => ({
@@ -24,15 +28,36 @@ const resumenes = await Promise.all(
     summary: await buildProgressSummary({ userId: user.id, goalId: goal.goalId }, 30),
   })),
 );
+
+/*
+ * Los archivados también traen su resumen: esta pantalla es el único sitio donde
+ * su historial sigue siendo consultable. `syncAllGoals` no los ha tocado —filtra
+ * por `archivedAt: null`—, así que lo que se lee aquí es el estado en que se
+ * quedaron, que es justo lo que se quiere mostrar.
+ */
+const archivados = await listArchivedGoals(user.id);
+const resumenesArchivados = await Promise.all(
+  archivados.map(async (goal) => ({
+    goal,
+    summary: await buildProgressSummary({ userId: user.id, goalId: goal.goalId }, 30),
+    archivedOn: dayKey(goal.archivedAt!, profile.timezone),
+  })),
+);
 ---
 
-<AppLayout title="Progreso" subheading="Días cumplidos, tiempo acumulado y tu refugio, objetivo por objetivo.">
+<AppLayout
+  title="Progreso"
+  subheading="Días cumplidos, tiempo acumulado y tu refugio, objetivo por objetivo."
+>
   {
     goals.length === 0 ? (
       <Card>
         <p class="text-text-soft">
           No tienes objetivos activos. Configúralos en{' '}
-          <a class="font-medium text-primary hover:underline" href="/ajustes">Ajustes</a>.
+          <a class="font-medium text-primary hover:underline" href="/ajustes">
+            Ajustes
+          </a>
+          .
         </p>
       </Card>
     ) : (
@@ -50,4 +75,6 @@ const resumenes = await Promise.all(
       </GoalTabs>
     )
   }
+
+  {resumenesArchivados.length > 0 && <ArchivedGoals entries={resumenesArchivados} />}
 </AppLayout>

@@ -17,6 +17,8 @@ interface Props {
   goalId: string;
   /** Nombre del objetivo, para que los textos no digan "leer" en Inglés. */
   goalLabel: string;
+  /** "de lectura", "de inglés", "de estudio": el vocabulario del objetivo. */
+  activity: string;
   /** Libro, curso o tema: el metadato del objetivo, ya resuelto por el servidor. */
   contextLabel: string | null;
   dailyGoalMinutes: number;
@@ -38,6 +40,7 @@ export default function SessionTimer({
   initialSession,
   goalId,
   goalLabel,
+  activity,
   contextLabel: _contextLabel,
   dailyGoalMinutes,
   minSessionSeconds,
@@ -329,8 +332,8 @@ export default function SessionTimer({
 
       {daySeconds > 0 && (
         <p className="mt-5 text-sm text-text-soft">
-          Hoy llevas <span className="font-medium text-text">{formatDuration(daySeconds)}</span> de
-          lectura.
+          Hoy llevas <span className="font-medium text-text">{formatDuration(daySeconds)}</span>{' '}
+          {activity}.
         </p>
       )}
     </div>

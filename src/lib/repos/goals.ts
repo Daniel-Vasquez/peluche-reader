@@ -74,6 +74,21 @@ export async function listGoals(userId: string): Promise<WithId<GoalDoc>[]> {
 }
 
 /**
+ * Objetivos archivados, del más reciente al más antiguo.
+ *
+ * No entran en `listGoals`, así que quedan fuera de la Vista de Hoy, de los
+ * acordeones de Ajustes y de `syncAllGoals`: un objetivo archivado **deja de
+ * reconciliarse y por tanto de restar perritos**. Su historial sigue intacto y
+ * `/progreso` lo muestra bajo "Archivados".
+ */
+export async function listArchivedGoals(userId: string): Promise<WithId<GoalDoc>[]> {
+  return (await col.goals())
+    .find({ userId, archivedAt: { $ne: null } })
+    .sort({ archivedAt: -1 })
+    .toArray();
+}
+
+/**
  * Los objetivos que tocan HOY. Es lo que pinta la Vista de Hoy.
  *
  * `scheduledDays: weekday` sobre un array hace *array-contains* en MongoDB: no

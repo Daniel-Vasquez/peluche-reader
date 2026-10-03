@@ -157,7 +157,7 @@ export interface SessionDoc {
   updatedAt: Date;
 }
 
-/** Agregado por usuario y día. Índice único en `(userId, dayKey)`. */
+/** Agregado por usuario, objetivo y día. Índice único en `(userId, goalId, dayKey)`. */
 export interface DailyProgressDoc {
   userId: string;
   goalId: string;
@@ -176,7 +176,7 @@ export interface DailyProgressDoc {
   updatedAt: Date;
 }
 
-/** Estado de gamificación. Uno por usuario (índice único en `userId`). */
+/** Estado de gamificación. Uno por objetivo (índice único en `(userId, goalId)`). */
 export interface GameStateDoc {
   userId: string;
   goalId: string;

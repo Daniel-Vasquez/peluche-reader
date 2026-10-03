@@ -1,18 +1,29 @@
 /**
- * Datos de demostración: un usuario con 8 semanas de historia leyendo
- * "Influencia: La Psicología de la Persuasión".
+ * Datos de demostración: un usuario con 8 semanas de historia en los **tres**
+ * objetivos, cada uno con una historia distinta.
  *
  *   npm run db:seed
  *
- * **No escribe `gameState` a mano.** Simula el paso del tiempo día a día
- * llamando a `syncOnVisit` y `settleSession` con un `now` falso, igual que haría
- * la app en producción. Así el seed es además un test de integración del motor:
- * si el balance está mal, aquí se nota.
+ * | Objetivo | Días    | Perfil                                      |
+ * |----------|---------|---------------------------------------------|
+ * | Lectura  | L–V     | constante, racha larga                      |
+ * | Inglés   | M, J, S | irregular, con fallos y sesiones cortas     |
+ * | Estudio  | L, X, V | sesiones largas, empezado hace dos semanas  |
  *
- * Por qué día a día y no de golpe: la reconciliación juzga cada día contra los
- * días ya marcados como completados. Si se crean todas las sesiones primero y se
- * reconcilia al final, el motor ve un pasado sin lecturas, penaliza todo y la
- * racha sale en cero. El orden importa.
+ * **No escribe `gameState` a mano.** Simula el paso del tiempo día a día
+ * llamando a `syncGoal` y `settleSession` con un `now` falso, igual que haría la
+ * app en producción. Así el seed es además un test de integración del motor: si
+ * el balance está mal, aquí se nota.
+ *
+ * Por qué día a día y no de golpe: `reconcile` juzga cada día pendiente con los
+ * días comprometidos que el objetivo tiene **en ese momento**. Si se crean todas
+ * las sesiones primero y se reconcilia al final, el motor ve un pasado sin
+ * actividad, penaliza todo y la racha sale en cero. El orden importa.
+ *
+ * Y es justo lo que hace posible el perfil de Estudio: sus días se ponen en el
+ * día 42 de la simulación, así que los 42 anteriores ya se reconciliaron como
+ * días de descanso y no le cuestan ni un perrito. Es lo mismo que pasa cuando un
+ * usuario real activa un objetivo que tenía sin configurar.
  *
  * ⚠️ **Este script NUNCA borra un usuario existente.** Si `SEED_USER_EMAIL` ya
  * está registrado, aborta y te dice qué hacer. Una versión anterior sí borraba
@@ -26,38 +37,12 @@ import { getAuth } from '@/lib/auth';
 import { col } from '@/lib/db/collections';
 import type { SessionDoc } from '@/lib/db/types';
 import { settleSession, syncAllGoals, syncGoal } from '@/lib/game/service';
-import { READING_GOAL_ID } from '@/lib/goal-constants';
 import { ensureDefaultGoals, updateGoal } from '@/lib/repos/goals';
 import { readEnvOr } from '@/lib/env';
-import { addDays, dayKey, isoWeekdayOfDayKey, type IsoWeekday } from '@/lib/time';
+import { addDays, dayKey } from '@/lib/time';
+import { DAYS, SEED_GOALS, WEEKS } from './seed-profiles';
 
 const TIMEZONE = 'UTC';
-const SCHEDULED: IsoWeekday[] = [1, 2, 3, 4, 5];
-const BOOK = 'Influencia: La Psicología de la Persuasión';
-const WEEKS = 8;
-
-/**
- * Minutos leídos por día, empezando 8 semanas atrás.
- *
- * Mezcla deliberada: días buenos, días flojos, tres días programados fallados y
- * fines de semana en blanco, para que las gráficas tengan relieve y el mapa de
- * calor muestre los cuatro tramos de la rampa.
- */
-function minutesFor(dayKeyValue: string, index: number): number {
-  const weekday = isoWeekdayOfDayKey(dayKeyValue);
-  const isWeekend = weekday === 6 || weekday === 7;
-
-  // Tres fallos repartidos, para que se vean penalizaciones reales.
-  if ([9, 24, 41].includes(index)) return 0;
-  // Un día programado con lectura insuficiente: cuesta perrito igual.
-  if (index === 33) return 6;
-
-  if (isWeekend) return index % 3 === 0 ? 12 : 0;
-
-  const patron = [22, 31, 14, 18, 26, 12, 35, 19, 24, 16, 21, 28, 13, 30, 17, 23, 11, 27, 20, 33];
-  return patron[index % patron.length]!;
-}
-
 /** Longitud mínima que exige Better Auth (`emailAndPassword.minPasswordLength`). */
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -99,63 +84,91 @@ async function main(): Promise<void> {
   console.log(`  Usuario creado: ${userId}`);
 
   await ensureDefaultGoals(userId);
-  const ref = { userId, goalId: READING_GOAL_ID };
-  await updateGoal(ref, {
-    scheduledDays: SCHEDULED,
-    dailyGoalMinutes: 20,
-    metadata: { type: 'reading', bookTitle: BOOK, author: null },
-  });
+
+  /*
+   * Los metadatos y la meta se fijan ya; los días comprometidos NO. Esos los
+   * pone el bucle en el día que le toca a cada objetivo, porque son los que
+   * deciden las penalizaciones del pasado.
+   */
+  for (const seed of SEED_GOALS) {
+    await updateGoal(
+      { userId, goalId: seed.goalId },
+      { dailyGoalMinutes: seed.dailyGoalMinutes, metadata: seed.metadata },
+    );
+  }
 
   const sessions = await col.sessions();
   const today = dayKey(new Date(), TIMEZONE);
-  const firstDay = addDays(today, -(WEEKS * 7 - 1));
+  const firstDay = addDays(today, -(DAYS - 1));
 
-  let minutesTotal = 0;
-  let sessionsTotal = 0;
+  const cuenta = new Map(SEED_GOALS.map((g) => [g.goalId, { minutes: 0, sessions: 0 }]));
 
-  for (let i = 0; i < WEEKS * 7; i += 1) {
+  for (let i = 0; i < DAYS; i += 1) {
     const day = addDays(firstDay, i);
-    // Mediodía de ese día: dentro de la jornada, lejos de cualquier frontera.
-    const noon = new Date(`${day}T12:00:00.000Z`);
 
-    // 1. Entrar a la app ese día: liquida las penalizaciones pendientes.
-    await syncGoal(ref, noon);
+    for (const seed of SEED_GOALS) {
+      const ref = { userId, goalId: seed.goalId };
+      const at = new Date(`${day}T${String(seed.hour).padStart(2, '0')}:00:00.000Z`);
 
-    // 2. Leer, si toca.
-    const minutes = minutesFor(day, i);
-    if (minutes === 0) continue;
+      // 1. ¿Hoy es el día en que este objetivo empieza? Ponerle sus días AHORA,
+      //    cuando los días anteriores ya están reconciliados como descanso.
+      if (i === seed.activeFrom) {
+        await updateGoal(ref, { scheduledDays: seed.scheduledDays });
+      }
 
-    const startedAt = new Date(noon.getTime() - minutes * 60_000);
-    const doc: SessionDoc = {
-      ...ref,
-      dayKey: day,
-      contextLabel: BOOK,
-      status: 'completed',
-      startedAt,
-      lastResumedAt: null,
-      accumulatedSeconds: minutes * 60,
-      endedAt: noon,
-      durationSeconds: minutes * 60,
-      settledAt: null,
-      createdAt: startedAt,
-      updatedAt: noon,
-    };
-    const { insertedId } = await sessions.insertOne(doc);
+      // 2. Entrar a la app: liquida las penalizaciones pendientes de este objetivo.
+      await syncGoal(ref, at);
 
-    // 3. Liquidarla con el reloj de ese día.
-    await settleSession({ ...doc, _id: insertedId }, noon);
+      // 3. Hacer la sesión, si toca.
+      const minutes = seed.minutesFor(day, i);
+      if (minutes === 0) continue;
 
-    minutesTotal += minutes;
-    sessionsTotal += 1;
+      const startedAt = new Date(at.getTime() - minutes * 60_000);
+      const doc: SessionDoc = {
+        ...ref,
+        dayKey: day,
+        contextLabel: seed.contextLabel,
+        status: 'completed',
+        startedAt,
+        lastResumedAt: null,
+        accumulatedSeconds: minutes * 60,
+        endedAt: at,
+        durationSeconds: minutes * 60,
+        settledAt: null,
+        createdAt: startedAt,
+        updatedAt: at,
+      };
+      const { insertedId } = await sessions.insertOne(doc);
+
+      // 4. Liquidarla con el reloj de ese día.
+      await settleSession({ ...doc, _id: insertedId }, at);
+
+      const acumulado = cuenta.get(seed.goalId)!;
+      acumulado.minutes += minutes;
+      acumulado.sessions += 1;
+    }
   }
 
   // Última visita con el reloj real, para dejar el estado al día.
-  const snapshot = (await syncAllGoals(userId)).find((s) => s.goalId === READING_GOAL_ID)!;
+  const snapshots = await syncAllGoals(userId);
 
-  console.log(`\n  ${sessionsTotal} sesiones · ${minutesTotal} minutos en ${WEEKS} semanas`);
-  console.log(`  Refugio: ${snapshot.shelter.dogs}/${snapshot.shelter.capacity} perritos, ` +
-    `${snapshot.shelter.adopted} adoptados`);
-  console.log(`  Racha: ${snapshot.shelter.streak} (récord ${snapshot.shelter.bestStreak})`);
+  console.log(`\n  ${WEEKS} semanas simuladas, día a día:\n`);
+  for (const seed of SEED_GOALS) {
+    const snapshot = snapshots.find((s) => s.goalId === seed.goalId);
+    const acumulado = cuenta.get(seed.goalId)!;
+    if (!snapshot) {
+      console.log(`  ${seed.label}: sin estado (¿archivado?)`);
+      continue;
+    }
+    const { shelter } = snapshot;
+    console.log(
+      `  ${seed.label.padEnd(8)} ${String(acumulado.sessions).padStart(2)} sesiones · ` +
+        `${String(acumulado.minutes).padStart(4)} min · ` +
+        `${shelter.dogs}/${shelter.capacity} perritos · ` +
+        `racha ${shelter.streak} (récord ${shelter.bestStreak})`,
+    );
+  }
+
   console.log(`\n✓ Listo. Entra con ${email} / ${password}`);
 }
 

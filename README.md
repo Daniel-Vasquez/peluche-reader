@@ -95,7 +95,7 @@ npm run dev              # http://localhost:4321
 | `npm run dev` | Servidor de desarrollo |
 | `npm run build` | Build de producción (salida en `.vercel/output`) |
 | `npm run typecheck` | `tsc --noEmit` sobre todo el proyecto |
-| `npm test` | Vitest: **48 tests** del motor de gamificación |
+| `npm test` | Vitest: **85 tests** — 48 del motor, 37 de los perfiles del seed |
 | `npm run db:init` | Crea los índices de MongoDB (idempotente) |
 | `npm run db:dump` | Vuelca todas las colecciones a `backups/<marca>/` |
 | `npm run db:restore -- <carpeta>` | Restaura un volcado; exige `ALLOW_DB_RESTORE=yes` |
@@ -140,12 +140,13 @@ src/
 │   │   ├── penalties.ts     topes de penalización    (puro)
 │   │   ├── engine.ts        reducer + reconciliación (puro)
 │   │   ├── service.ts       orquesta el motor con MongoDB (impuro)
-│   │   └── __tests__/       45 tests, incluida una prueba de fuzz
+│   │   └── __tests__/       48 tests, incluida una prueba de fuzz
 │   └── repos/               profile · sessions · progress · gameState · summary
 ├── components/              ui/ · auth/ · charts/ · icons/
 │                            today/      tarjeta de cada objetivo de hoy
-│                            progress/   pestañas y panel por objetivo
+│                            progress/   pestañas, panel y archivados
 │                            settings/   acordeón y formulario por objetivo
+│                            goals/      archivar y reactivar un objetivo
 │                            SessionTimer · Shelter · ThemeToggle
 ├── layouts/                 BaseLayout · AuthLayout · AppLayout
 ├── styles/global.css        tokens de color de los dos temas
@@ -155,10 +156,10 @@ src/
     ├── login · registro
     ├── app.astro            Vista de Hoy: los objetivos que tocan
     ├── sesion/[goalId]      cronómetro + refugio de un objetivo
-    ├── progreso.astro       dashboard
-    ├── ajustes.astro        nombre, días, meta, libro
+    ├── progreso.astro       dashboard: una pestaña por objetivo + archivados
+    ├── ajustes.astro        la cuenta + un acordeón por objetivo
     ├── 404 · 500
-    └── api/                 auth/[...all] · profile · sessions/* · progress/summary
+    └── api/                 auth/[...all] · profile · goals/* · sessions/* · progress/summary
 ```
 
 ### Colecciones de MongoDB
@@ -166,14 +167,24 @@ src/
 | Colección | Qué guarda | Índice |
 |---|---|---|
 | `user` · `account` · `session` | Better Auth | — |
-| `profiles` | zona horaria, días comprometidos, meta, libro | `userId` único |
-| `readingSessions` | cada sesión del cronómetro | `userId+dayKey`, `userId+status` |
-| `dailyProgress` | agregado por día | **`userId+dayKey` único** |
-| `gameState` | refugio, racha, semana en curso | `userId` único |
-| `gameEvents` | historial de movimientos | `userId+createdAt` |
+| `profiles` | lo que es de la **cuenta**: zona horaria y onboarding | `userId` único |
+| `goals` | un objetivo: días comprometidos, meta, metadatos, archivado | `userId+goalId` único · `userId+archivedAt+order` |
+| `sessions` | cada sesión del cronómetro | `userId+goalId+dayKey` · `userId` único **solo en las abiertas** |
+| `dailyProgress` | agregado por objetivo y día | **`userId+goalId+dayKey` único** · `userId+goalId+weekKey` |
+| `gameState` | refugio, racha, semana en curso | **`userId+goalId` único** |
+| `gameEvents` | historial de movimientos | `userId+goalId+createdAt` desc |
 
-El índice único en `dailyProgress` es lo que hace seguro el `upsert` bajo
-peticiones concurrentes.
+Dos índices cargan con una regla de negocio cada uno:
+
+- El **único en `dailyProgress`** es lo que hace seguro el `upsert` bajo
+  peticiones concurrentes. Lleva `goalId` desde la Tanda A: sin él, dos objetivos
+  del mismo día colisionarían y el segundo no podría registrarse.
+- El **parcial en `sessions`** limita a **una** sesión abierta por usuario aunque
+  tenga varios objetivos: nadie lee y estudia a la vez. Puesto en la base de
+  datos, es una regla y no una buena intención del código.
+
+Un `gameState` por objetivo es lo que hace los refugios independientes: perder
+perritos en Inglés no toca los de Lectura.
 
 ---
 
@@ -268,19 +279,23 @@ Las diez tandas del plan están completas.
 El plan técnico completo, con el detalle de cada tanda y las trampas encontradas
 al ejecutarlas, está en [`planificacion.md`](./planificacion.md).
 
-## Siguiente: sistema multi-objetivo
+## Sistema multi-objetivo
 
-La **Parte II** del plan (tandas A–E, por ejecutar) convierte la app de tracker de
-lectura en un sistema de objetivos independientes —**Lectura, Inglés y Estudio**—,
-cada uno con sus días comprometidos, sus metadatos y su propio refugio de
-perritos.
+La **Parte II** del plan (tandas A–E) convirtió la app de tracker de lectura en un
+sistema de objetivos independientes —**Lectura, Inglés y Estudio**—, cada uno con
+sus días comprometidos, sus metadatos y su propio refugio de perritos.
 
 - [x] **Tanda A** · Esquema multi-objetivo: colección `goals`, `goalId` en todas
       las colecciones de datos, migración y respaldo
 - [x] **Tanda B** · Vocabulario por tipo de objetivo, `/api/goals` y ajustes por objetivo
 - [x] **Tanda C** · «Vista de Hoy» en `/app` y cronómetro en `/sesion/[goalId]`
 - [x] **Tanda D** · `/progreso` por pestañas y `/ajustes` por acordeones
-- [ ] **Tanda E** · Archivado de objetivos, semilla multi-objetivo y limpieza
+- [x] **Tanda E** · Archivado de objetivos, semilla multi-objetivo y limpieza
+
+Dos criterios de la Tanda E piden escribir en la base de datos y están
+**pendientes de comprobar con la app delante**: que archivar un objetivo lo saca
+de la Vista de Hoy sin borrar sus sesiones, y que `npm run db:seed` produce las
+tres historias. El detalle está en el [plan](./planificacion.md).
 
 El motor de gamificación **no cambia**: es puro y opera sobre un `GameState`, así
 que varios objetivos son varios estados. El [Apéndice D](./planificacion.md) lista

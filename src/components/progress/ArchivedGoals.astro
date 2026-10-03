@@ -1,0 +1,87 @@
+---
+import ArchiveToggle from '@/components/goals/ArchiveToggle';
+import GoalIcon from '@/components/icons/GoalIcon.astro';
+import GoalProgressPanel from '@/components/progress/GoalProgressPanel.astro';
+import type { GoalDoc } from '@/lib/db/types';
+import { vocabularyFor } from '@/lib/game/vocabulary';
+import type { ProgressSummary } from '@/lib/progress-summary';
+
+/**
+ * Los objetivos archivados, al final de `/progreso`.
+ *
+ * **No son pestañas, y es deliberado.** Una pestaña invita a entrar; estos
+ * objetivos ya no se usan y solo están aquí para consultar lo que se hizo con
+ * ellos y para poder volver a activarlos. Mezclarlos con los activos pondría al
+ * mismo nivel lo que está en marcha y lo que está guardado.
+ *
+ * Cada uno es un `<details>` cerrado: dentro de un elemento sin caja las islas
+ * `client:visible` del panel no hidratan, así que un historial largo de
+ * objetivos archivados no cuesta ni un montaje de Recharts hasta que se abre.
+ */
+interface Props {
+  entries: { goal: GoalDoc; summary: ProgressSummary; archivedOn: string }[];
+}
+
+const { entries } = Astro.props;
+---
+
+<section class="mt-10">
+  <h2 class="mb-1 text-sm font-medium tracking-wide text-text-soft uppercase">Archivados</h2>
+  <p class="mb-3 text-sm text-text-soft">
+    Estos objetivos no aparecen en Hoy y no te cuestan perritos. Su historial sigue aquí.
+  </p>
+
+  <div class="space-y-3">
+    {
+      entries.map(({ goal, summary, archivedOn }) => (
+        <details class="group rounded-card border border-border bg-surface">
+          <summary
+            class="flex min-h-11 cursor-pointer list-none items-center gap-3 px-5 py-3 [&::-webkit-details-marker]:hidden"
+          >
+            <span class="shrink-0 text-text-soft">
+              <GoalIcon type={goal.type} />
+            </span>
+
+            <span class="min-w-0 grow">
+              <span class="font-medium">{goal.label}</span>
+              <span class="block truncate text-sm text-text-soft">
+                Archivado el {archivedOn} · {summary.totals.minutesAllTime} min en total
+              </span>
+            </span>
+
+            <span
+              aria-hidden
+              class="shrink-0 text-text-soft transition-transform group-open:rotate-180"
+            >
+              ⌄
+            </span>
+          </summary>
+
+          <div class="border-t border-border px-5 py-5">
+            <ArchiveToggle client:visible goalId={goal.goalId} label={goal.label} archived={true} />
+
+            {/*
+              El panel vacío invita a "empezar tu primera sesión en Hoy", y un
+              objetivo archivado no está en Hoy. Si nunca tuvo actividad, no hay
+              historial que mostrar y decirlo es más honesto que el panel.
+            */}
+            <div class="mt-6">
+              {summary.empty ? (
+                <p class="text-sm text-text-soft">
+                  Este objetivo se archivó sin ninguna sesión registrada.
+                </p>
+              ) : (
+                <GoalProgressPanel
+                  summary={summary}
+                  label={goal.label}
+                  dailyGoalMinutes={goal.dailyGoalMinutes}
+                  activity={vocabularyFor(goal.type).activity}
+                />
+              )}
+            </div>
+          </div>
+        </details>
+      ))
+    }
+  </div>
+</section>

@@ -6,6 +6,7 @@ import SessionTimer from '@/components/SessionTimer';
 import Shelter from '@/components/Shelter';
 import { goalContext } from '@/lib/db/types';
 import { syncGoal } from '@/lib/game/service';
+import { vocabularyFor } from '@/lib/game/vocabulary';
 import { findGoal } from '@/lib/repos/goals';
 import { ensureProfile } from '@/lib/repos/profile';
 import {
@@ -24,8 +25,15 @@ const { goalId } = Astro.params;
 
 const ref = { userId: user.id, goalId: goalId! };
 const goal = await findGoal(ref);
-// Un objetivo ajeno o inexistente es indistinguible: no se filtra que exista.
-if (!goal) return Astro.redirect('/app', 302);
+/*
+ * Un objetivo ajeno o inexistente es indistinguible: no se filtra que exista.
+ *
+ * Y uno archivado se trata igual que uno que no existe. No basta con quitarlo de
+ * la Vista de Hoy: esta URL es enlazable y puede estar en el historial del
+ * navegador, y dejar cronometrar un objetivo archivado crearía sesiones que
+ * `syncAllGoals` ya no reconcilia nunca.
+ */
+if (!goal || goal.archivedAt !== null) return Astro.redirect('/app', 302);
 
 const now = new Date();
 const profile = await ensureProfile(user.id);
@@ -83,6 +91,7 @@ const daySeconds = await completedSecondsForDay(ref, todayKey);
           initialSession={propia ? toSessionView(propia, now) : null}
           goalId={goal.goalId}
           goalLabel={goal.label}
+          activity={vocabularyFor(goal.type).activity}
           contextLabel={goalContext(goal.metadata)}
           dailyGoalMinutes={goal.dailyGoalMinutes}
           minSessionSeconds={MIN_SESSION_SECONDS}

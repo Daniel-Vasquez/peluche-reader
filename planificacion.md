@@ -3329,79 +3329,60 @@ tiene configurado cada objetivo.
 Patrón ARIA de pestañas completo. **Las flechas del teclado no son opcionales**:
 sin ellas una lista de pestañas es un grupo de botones con aspecto de pestañas.
 
-```tsx
-export default function GoalTabs({ goals, children }: Props) {
-  const [activa, setActiva] = useState(goals[0]?.goalId ?? '');
-  const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+El marcado lo genera `GoalTabs.astro` y cada panel es un `GoalTabPanel.astro`;
+el script en línea mantiene `aria-selected`, el tabindex itinerante y el
+`hidden`, y se registra también en `astro:page-load` para sobrevivir a las
+navegaciones del `ClientRouter`.
 
-  /** ← → mueven entre pestañas; Home/End saltan a los extremos. */
-  function onKeyDown(e: React.KeyboardEvent, i: number) {
-    const delta = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
-    let destino = i;
-    if (delta !== 0) destino = (i + delta + goals.length) % goals.length;
-    else if (e.key === 'Home') destino = 0;
-    else if (e.key === 'End') destino = goals.length - 1;
-    else return;
+```astro
+<script>
+  function montarPestañas() {
+    for (const grupo of document.querySelectorAll<HTMLElement>('.goal-tabs')) {
+      const tabs = [...grupo.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+      if (tabs.length === 0) continue;
 
-    e.preventDefault();
-    const id = goals[destino]!.goalId;
-    setActiva(id);
-    refs.current[id]?.focus();
+      const activar = (destino: HTMLButtonElement, mover = true) => {
+        for (const tab of tabs) {
+          const seleccionada = tab === destino;
+          tab.setAttribute('aria-selected', String(seleccionada));
+          // Tabindex itinerante: solo la activa está en el orden de tabulación.
+          tab.tabIndex = seleccionada ? 0 : -1;
+          const panel = grupo.querySelector<HTMLElement>(`[data-panel="${tab.dataset.tab}"]`);
+          // Al quitar `hidden`, la isla `client:visible` del panel hidrata.
+          if (panel) panel.hidden = !seleccionada;
+        }
+        if (mover) destino.focus();
+      };
+
+      for (const [i, tab] of tabs.entries()) {
+        tab.addEventListener('click', () => activar(tab, false));
+        tab.addEventListener('keydown', (evento) => {
+          const delta = evento.key === 'ArrowRight' ? 1 : evento.key === 'ArrowLeft' ? -1 : 0;
+          let destino = i;
+          if (delta !== 0) destino = (i + delta + tabs.length) % tabs.length;
+          else if (evento.key === 'Home') destino = 0;
+          else if (evento.key === 'End') destino = tabs.length - 1;
+          else return;
+
+          evento.preventDefault();
+          activar(tabs[destino]!);
+        });
+      }
+    }
   }
 
-  return (
-    <>
-      <div role="tablist" aria-label="Objetivos" className="flex gap-1 border-b border-border">
-        {goals.map((g, i) => {
-          const seleccionada = g.goalId === activa;
-          return (
-            <button
-              key={g.goalId}
-              ref={(el) => { refs.current[g.goalId] = el; }}
-              role="tab"
-              id={`tab-${g.goalId}`}
-              aria-selected={seleccionada}
-              aria-controls={`panel-${g.goalId}`}
-              // Solo la pestaña activa entra en el orden de tabulación: desde
-              // ella se navega con las flechas. Es el patrón ARIA.
-              tabIndex={seleccionada ? 0 : -1}
-              onClick={() => setActiva(g.goalId)}
-              onKeyDown={(e) => onKeyDown(e, i)}
-              className={clsx(
-                'min-h-11 rounded-t-card px-4 text-sm font-medium transition',
-                seleccionada
-                  ? 'border-b-2 border-primary text-primary'
-                  : 'text-text-soft hover:text-text',
-              )}
-            >
-              {g.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {goals.map((g) => (
-        <div
-          key={g.goalId}
-          role="tabpanel"
-          id={`panel-${g.goalId}`}
-          aria-labelledby={`tab-${g.goalId}`}
-          hidden={g.goalId !== activa}
-          tabIndex={0}
-          className="pt-6"
-        >
-          {children(g)}
-        </div>
-      ))}
-    </>
-  );
-}
+  montarPestañas();
+  document.addEventListener('astro:page-load', montarPestañas);
+</script>
 ```
 
 > **El panel inactivo lleva `hidden`, no `display:none` por clase.** Así sale del
 > árbol de accesibilidad y, de paso, Recharts no mide un contenedor de 0 px —
 > que es el motivo por el que una gráfica dentro de una pestaña oculta suele
 > renderizarse con ancho cero al mostrarla.
+
+Los paneles llegan por el slot **por defecto**; el porqué está en la trampa que
+cierra D.5.
 
 ### D.3 Acordeones en Ajustes — `components/settings/GoalAccordion.astro`
 
@@ -3491,8 +3472,12 @@ const resumenes = await Promise.all(
 ---
 
 <AppLayout title="Progreso">
-  <GoalTabs client:load goals={goals}>
-    {/* Un panel por objetivo, cada uno con sus propias gráficas y su refugio */}
+  <GoalTabs tabs={goals.map((g) => ({ id: g.goalId, label: g.label, type: g.type }))}>
+    {resumenes.map(({ goal, summary }, i) => (
+      <GoalTabPanel id={goal.goalId} activo={i === 0}>
+        <GoalProgressPanel summary={summary} label={goal.label} … />
+      </GoalTabPanel>
+    ))}
   </GoalTabs>
 </AppLayout>
 ```
@@ -3509,19 +3494,9 @@ const resumenes = await Promise.all(
 > slot fuera del closure del bucle, así que `goal` ya no existe donde se evalúa.
 > `astro build` pasa limpio: el fallo solo aparece en ejecución.
 >
-> La forma que funciona es el slot **por defecto** con un componente de panel
-> propio, `GoalTabPanel.astro`, que pone `role="tabpanel"`, el `id` y el
-> `hidden`:
->
-> ```astro
-> <GoalTabs tabs={goals.map((g) => ({ id: g.goalId, label: g.label, type: g.type }))}>
->   {resumenes.map(({ goal, summary }, i) => (
->     <GoalTabPanel id={goal.goalId} activo={i === 0}>
->       <GoalProgressPanel summary={summary} … />
->     </GoalTabPanel>
->   ))}
-> </GoalTabs>
-> ```
+> La forma que funciona es la de arriba: el slot **por defecto** con un
+> componente de panel propio, `GoalTabPanel.astro`, que pone `role="tabpanel"`,
+> el `id` y el `hidden`.
 
 **Advertencia de rendimiento**: con tres objetivos, `/progreso` pasa a hacer tres
 `buildProgressSummary`, cada uno con su agregación. Si la carga se nota, el
@@ -3572,11 +3547,39 @@ tiene que poder desactivar los que no use. **Archivar, nunca borrar**: las
 sesiones y los eventos pasados siguen teniendo sentido y el historial no debe
 perder filas.
 
-- `PATCH /api/goals/[goalId]` con `{ archivedAt: <fecha> }`.
+- `PATCH /api/goals/[goalId]` con `{ archived: boolean }` — el endpoint traduce
+  el booleano a `archivedAt`, para que el cliente no tenga que inventar la fecha.
 - Un objetivo archivado desaparece de la Vista de Hoy y de los acordeones, pero
   sigue en `/progreso` bajo un apartado "Archivados".
 - **Su reconciliación se detiene**: `syncAllGoals` filtra por `archivedAt: null`,
   así que un objetivo archivado deja de restar perritos.
+
+El backend ya estaba: lo trajo la Tanda B (`archived` en el `PatchSchema`) y la
+Tanda A (`listGoals` y `goalsForDay` filtrando `archivedAt: null`). Lo que falta
+en esta tanda es la interfaz y un cabo suelto.
+
+**`components/goals/ArchiveToggle.tsx`**, el mismo componente en los dos
+sentidos, porque la operación es simétrica. Vive en `goals/` y no en `settings/`
+ni en `progress/`: lo usan los dos.
+
+- **Variante `ghost`, no una `danger`.** Archivar no borra nada, así que pintarlo
+  como destructivo mentiría. Y el sistema de diseño admite un solo elemento
+  `alert` por pantalla: con un acordeón por objetivo, tres botones de alerta
+  serían tres incumplimientos de la misma regla.
+- Confirmación en dos pasos **en línea**, sin `confirm()`: un diálogo del
+  navegador bloquea el hilo, no se puede estilar y se anuncia fuera del contexto
+  del objetivo que se está archivando. Reactivar no confirma — no se pierde nada
+  al reactivar por error.
+- Al terminar, `location.reload()`. Archivar cambia las pestañas de Progreso, los
+  acordeones de Ajustes y la Vista de Hoy, y los tres se renderizan en el
+  servidor: sincronizarlos desde una isla sería reimplementar la página en el
+  cliente.
+
+**El cabo suelto: `/sesion/[goalId]` tenía que mirar `archivedAt`.** Quitar el
+objetivo de la Vista de Hoy no basta, porque esa URL es enlazable y puede estar
+en el historial del navegador. Dejar cronometrar un objetivo archivado crearía
+sesiones que `syncAllGoals` ya no reconcilia nunca. Ahora un objetivo archivado
+se trata igual que uno inexistente: redirección a `/app`.
 
 ### E.2 Semilla multi-objetivo
 
@@ -3591,6 +3594,27 @@ para que el dashboard y las pestañas se vean con datos de verdad:
 
 Mantiene la regla de la Tanda 9: avanza **día a día** con un `now` falso, y
 **nunca borra una cuenta existente**.
+
+Avanzar día a día pasa a ser además lo que hace posible el perfil de Estudio.
+`reconcile` juzga cada día pendiente con los días comprometidos que el objetivo
+tiene **en ese momento**, así que el seed le pone sus días el día 42 de la
+simulación: los 42 anteriores ya se reconciliaron como descanso y no le cuestan
+un perrito. Es exactamente lo que ocurre cuando un usuario activa un objetivo que
+tenía sin configurar.
+
+**Los fallos se numeran por día programado, no por índice del bucle.** El seed
+arranca 55 días antes de hoy, así que el día de la semana en que empieza cambia
+en cada ejecución; con índices crudos, un fallo de Inglés caía en martes un día y
+en domingo —donde Inglés no tiene nada— al siguiente, y el perfil salía más o
+menos accidentado según la fecha en que se sembrara. Cualquier bloque de 7 días
+consecutivos contiene exactamente un martes, un jueves y un sábado, así que
+contar el enésimo día programado recorre todos sin huecos ni repeticiones.
+
+**Los perfiles viven en `scripts/seed-profiles.ts`**, aparte del script. El seed
+necesita Mongo, pero decidir si los tres perfiles son de verdad distintos es
+aritmética sobre esas funciones y el umbral de `GAME`: separarlos permite
+comprobarlo en `scripts/__tests__/seed-profiles.test.ts`, en las siete
+alineaciones posibles del primer día.
 
 ### E.3 Limpieza
 
@@ -3608,13 +3632,38 @@ Mantiene la regla de la Tanda 9: avanza **día a día** con un `now` falso, y
 - `src/lib/sessions-view.ts` expone `bookTitle`; renombrar a `contextLabel` para
   que no mienta en los objetivos que no son lectura.
 
+Casi toda esta limpieza se adelantó a la Tanda D, que ya tenía las tres gráficas
+abiertas. Lo que quedaba al llegar aquí:
+
+- `SessionTimer.tsx` seguía con un **"de lectura"** cableado en el resumen del
+  día ("Hoy llevas 18 min de lectura"). Pasa a recibir `activity`, igual que las
+  gráficas, desde `vocabularyFor(goal.type)`.
+- Dos comentarios de `src/lib/db/types.ts` seguían anunciando los índices de
+  antes del multi-objetivo —`dailyProgress` único en `(userId, dayKey)` y
+  `gameState` "uno por usuario"—, cuando `db-init.ts` los crea por objetivo desde
+  la Tanda A. Un comentario que miente sobre un índice único es de los que hacen
+  perder una tarde.
+
 ### Criterio de aceptación
-- Archivar Inglés lo quita de la Vista de Hoy y **deja de penalizar**, sin borrar
-  ninguna de sus sesiones.
-- `npm run db:seed` produce tres objetivos con rachas distintas, y `/progreso`
-  muestra tres pestañas con gráficas distintas.
-- `grep -rnE "leer|leídos|lectura|libro" src/components/charts/` solo encuentra
-  comentarios, nunca texto que llegue a la pantalla.
+- `grep -rnE "leer|leídos|lectura|libro" src/components/charts/ src/components/SessionTimer.tsx`
+  solo encuentra comentarios, nunca texto que llegue a la pantalla. ✅
+- Los perfiles del seed dan a los tres objetivos rachas de longitudes bien
+  separadas, y Estudio no recibe ni una penalización por los días anteriores a su
+  activación: 37 casos en `scripts/__tests__/seed-profiles.test.ts`, repetidos en
+  las siete alineaciones del primer día. ✅
+- `npm run typecheck`, `npm test` (85) y `npm run build`, en verde. ✅
+
+**Pendiente de comprobar con la app delante**, a diferencia de las tandas C y D:
+
+- Que archivar Inglés lo quita de la Vista de Hoy y deja de penalizar sin borrar
+  sus sesiones.
+- Que `npm run db:seed` produce las tres historias y `/progreso` las tres
+  pestañas con gráficas distintas.
+
+Las dos piden escribir en la base de datos, y el `.env` del proyecto apunta a un
+clúster de Atlas: el seed crea una cuenta de demostración que —por la regla de la
+Tanda 9— ningún script vuelve a borrar. Ejecutarlo es una decisión del dueño de
+esa base, no del script.
 
 ---
 
