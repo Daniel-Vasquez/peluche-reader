@@ -2,9 +2,17 @@
 /**
  * Loader de pantalla completa durante la navegación entre páginas.
  *
- * **Solo en móvil** (`sm:hidden`): en escritorio la navegación de cliente es
- * casi instantánea y un velo a pantalla completa molestaría más de lo que
- * informa. En móvil, con la red que suele haber, la espera sí se nota.
+ * **En móvil y en escritorio.** Nació con `sm:hidden`, bajo el argumento de que
+ * en escritorio la navegación es casi instantánea y un velo a pantalla completa
+ * molestaría más de lo que informa. Pero quien decide si la espera se nota no es
+ * el ancho de la pantalla: es la red y lo que tarde el servidor. Un portátil con
+ * mala conexión, o una página que hace una agregación por objetivo como
+ * `/progreso`, deja exactamente la misma espera sin realimentación que se quería
+ * cubrir en móvil.
+ *
+ * Lo que de verdad evita el velo molesto es el `RETRASO_MS` de abajo, no el
+ * ancho: una navegación rápida termina antes de que el loader llegue a
+ * aparecer, así que en el caso que motivaba el `sm:hidden` no se ve nada igual.
  *
  * Se controla con el atributo `hidden`, no con clases: el preflight de Tailwind
  * lo marca como `display:none !important`, así que gana a `flex` sin depender
@@ -22,7 +30,7 @@
   hidden
   role="status"
   aria-live="polite"
-  class="fixed inset-0 z-[60] flex items-center justify-center bg-base/90 backdrop-blur-sm sm:hidden"
+  class="fixed inset-0 z-[60] flex items-center justify-center bg-base/90 backdrop-blur-sm"
 >
   {/*
     Colores por token: `border-border` para el aro y `border-t-text` para el
