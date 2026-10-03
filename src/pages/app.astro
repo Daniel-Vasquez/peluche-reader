@@ -25,19 +25,31 @@ await syncAllGoals(user.id, now);
 
 const todayKey = dayKey(now, profile.timezone);
 const weekday = isoWeekday(now, profile.timezone);
+/*
+ * `goals` son TODOS los objetivos activos, no solo los de hoy.
+ *
+ * El subtítulo y el estado vacío cuentan por separado: lo que el usuario tiene
+ * que hacer hoy son los `programados`, pero la pantalla solo está de verdad
+ * vacía si no hay ningún objetivo activo —todos archivados, o una cuenta recién
+ * migrada—. Mezclar los dos casos era lo que hacía que un domingo pareciera un
+ * error de la app.
+ */
 const goals = await buildTodayView(user.id, weekday, todayKey);
 
-const pendientes = goals.filter((g) => !g.today.completed);
+const programados = goals.filter((g) => g.isScheduledToday);
+const pendientes = programados.filter((g) => !g.today.completed);
 const greeting = firstName(user.name);
 
 const subheading =
   goals.length === 0
-    ? 'Hoy es día libre en todos tus objetivos.'
-    : pendientes.length === 0
-      ? '¡Todo hecho por hoy!'
-      : pendientes.length === goals.length
-        ? `Tienes ${goals.length} ${goals.length === 1 ? 'objetivo' : 'objetivos'} por delante.`
-        : `Te ${pendientes.length === 1 ? 'queda' : 'quedan'} ${pendientes.length} de ${goals.length}.`;
+    ? 'Todavía no tienes objetivos activos.'
+    : programados.length === 0
+      ? 'Hoy no te toca ninguno: descansa, que no pierdes ni un perrito.'
+      : pendientes.length === 0
+        ? '¡Todo hecho por hoy!'
+        : pendientes.length === programados.length
+          ? `Tienes ${programados.length} ${programados.length === 1 ? 'objetivo' : 'objetivos'} por delante.`
+          : `Te ${pendientes.length === 1 ? 'queda' : 'quedan'} ${pendientes.length} de ${programados.length}.`;
 ---
 
 <AppLayout title="Hoy" heading={`Hola, ${greeting}`} subheading={subheading}>

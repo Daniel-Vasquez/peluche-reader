@@ -2,7 +2,7 @@ import { col } from '@/lib/db/collections';
 import { goalContext, type GoalType } from '@/lib/db/types';
 import { dogsForMinutes } from '@/lib/game/rewards';
 import { ensureGameState, toGameState } from '@/lib/repos/gameState';
-import { goalsForDay } from '@/lib/repos/goals';
+import { listGoals } from '@/lib/repos/goals';
 import { findDayProgress } from '@/lib/repos/progress';
 import { findOpenSession } from '@/lib/repos/sessions';
 import { weekKeyFromDayKey, type IsoWeekday } from '@/lib/time';
@@ -22,6 +22,15 @@ export interface TodayGoalView {
   context: string | null;
   dailyGoalMinutes: number;
 
+  /**
+   * `true` si hoy es uno de los días comprometidos de este objetivo.
+   *
+   * La Vista de Hoy pinta **todos** los objetivos activos y usa esta marca para
+   * decidir la jerarquía visual. Antes la lista solo traía los de hoy, y un día
+   * sin nada programado dejaba la pantalla en un único párrafo.
+   */
+  isScheduledToday: boolean;
+
   today: {
     minutes: number;
     dogsAwarded: number;
@@ -38,6 +47,13 @@ export interface TodayGoalView {
 /**
  * Arma las tarjetas del día.
  *
+ * Trae **todos** los objetivos activos, no solo los de hoy, y marca cada uno con
+ * `isScheduledToday`. Filtrar aquí era lo que dejaba `/app` con una sola frase
+ * los días libres: la pantalla no estaba vacía por falta de datos, sino porque
+ * la consulta descartaba lo que sí había que enseñar.
+ *
+ * Los archivados siguen fuera: eso lo hace `listGoals` por su cuenta.
+ *
  * Asume que la reconciliación ya corrió (`syncAllGoals`): aquí solo se lee.
  */
 export async function buildTodayView(
@@ -45,7 +61,7 @@ export async function buildTodayView(
   weekday: IsoWeekday,
   todayKey: string,
 ): Promise<TodayGoalView[]> {
-  const goals = await goalsForDay(userId, weekday);
+  const goals = await listGoals(userId);
   if (goals.length === 0) return [];
 
   // Una sola consulta para toda la lista: solo puede haber una sesión abierta.
@@ -72,6 +88,7 @@ export async function buildTodayView(
         label: goal.label,
         context: goalContext(goal.metadata),
         dailyGoalMinutes: goal.dailyGoalMinutes,
+        isScheduledToday: goal.scheduledDays.includes(weekday),
         today: {
           minutes,
           dogsAwarded: row?.dogsAwarded ?? 0,

@@ -50,7 +50,16 @@ if (onboarding) await updateProfile(user.id, {});
   {
     goals.length === 0 ? (
       <Card>
-        <p class="text-text-soft">No tienes objetivos activos.</p>
+        {/*
+          Sin esta salida la pantalla era un callejón: archivados los tres
+          objetivos, aquí no quedaba ningún acordeón y el botón de reactivar vive
+          en Progreso, así que no había forma de volver desde Ajustes.
+        */}
+        <p class="text-text-soft">
+          Archivaste todos tus objetivos. Puedes reactivar el que quieras desde{' '}
+          <a class="font-medium text-primary hover:underline" href="/progreso">Progreso</a>,
+          en el apartado «Archivados».
+        </p>
       </Card>
     ) : (
       <div class="space-y-3">

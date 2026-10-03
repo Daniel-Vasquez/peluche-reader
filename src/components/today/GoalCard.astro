@@ -3,10 +3,22 @@ import GoalIcon from '@/components/icons/GoalIcon.astro';
 import type { TodayGoalView } from '@/lib/today-view';
 
 /**
- * Una tarjeta por objetivo del día.
+ * Una tarjeta por objetivo activo.
  *
  * Componente Astro, no React: es un enlace con datos del servidor y no necesita
  * estado. Cero JavaScript.
+ *
+ * Pinta dos estados. Un objetivo **programado hoy** es lo que el usuario viene a
+ * resolver y va con los colores de marca. Uno **no programado** se recoge a un
+ * plano secundario: sigue ahí para que la pantalla tenga cuerpo y para que se
+ * vea de un vistazo qué hay configurado, sin competir con lo que toca hoy.
+ *
+ * **La diferencia se hace con fondo y color de texto, no con `opacity` ni
+ * `grayscale`.** Un `opacity-60` sobre la tarjeta entera multiplica el contraste
+ * de todo lo que lleva dentro: `text-text-soft` sobre `surface` cumple AA por los
+ * pelos, y al 60 % se queda por debajo. Recoger el fondo a `muted` y el texto a
+ * `text-soft` consigue el mismo efecto de "esto es secundario" sin tocar ni un
+ * ratio de contraste.
  */
 interface Props {
   goal: TodayGoalView;
@@ -14,33 +26,59 @@ interface Props {
 
 const { goal } = Astro.props;
 
+const libre = !goal.isScheduledToday;
 const progreso = Math.min(1, goal.today.minutes / goal.dailyGoalMinutes);
 
-// El CTA dice lo que va a pasar, y cambia si hay una sesión a medias.
+/*
+ * El CTA dice lo que va a pasar.
+ *
+ * En un día libre sigue siendo un enlace vivo, no un botón deshabilitado, y la
+ * razón es de reglas del juego: un día no programado **nunca** penaliza, y los
+ * minutos que se le echen sí otorgan perritos. Bloquear el enlace no protegería
+ * de nada —no hay nada de lo que proteger— y quitaría la sesión extra, que es
+ * una función que ya existe y que el motor premia.
+ *
+ * Lo que sí cambia es el peso visual: relleno de marca cuando toca, contorno
+ * cuando no. La etiqueta «Día libre» de la cabecera es la que comunica el
+ * estado, con texto y no solo con color.
+ */
 const cta = goal.hasOpenSession
   ? 'Retomar sesión'
   : goal.today.completed
     ? 'Seguir sumando'
-    : 'Empezar sesión';
+    : libre
+      ? 'Sumar de todos modos'
+      : 'Empezar sesión';
 ---
 
-<article class="rounded-card border border-border bg-surface p-5">
+<article
+  class:list={[
+    'rounded-card border p-5',
+    libre ? 'border-border bg-muted' : 'border-border bg-surface',
+  ]}
+>
   <div class="flex items-start gap-3">
-    <span class="mt-0.5 shrink-0 text-primary">
+    <span class:list={['mt-0.5 shrink-0', libre ? 'text-text-soft' : 'text-primary']}>
       <GoalIcon type={goal.type} />
     </span>
 
     <div class="min-w-0 grow">
-      <h3 class="font-semibold">{goal.label}</h3>
+      <h3 class:list={['font-semibold', libre && 'text-text-soft']}>{goal.label}</h3>
       {goal.context && <p class="truncate text-sm text-text-soft">{goal.context}</p>}
     </div>
 
+    {/* El estado lleva símbolo y texto, nunca solo color. */}
     {
-      goal.today.completed && (
-        // El estado lleva símbolo y texto, nunca solo color.
+      goal.today.completed ? (
         <span class="shrink-0 text-sm font-medium text-primary">
           <span aria-hidden>✓</span> Hecho
         </span>
+      ) : (
+        libre && (
+          <span class="shrink-0 text-sm font-medium text-text-soft">
+            <span aria-hidden>·</span> Día libre
+          </span>
+        )
       )
     }
   </div>
@@ -52,7 +90,11 @@ const cta = goal.hasOpenSession
     aria-valuemin={0}
     aria-valuemax={goal.dailyGoalMinutes}
     aria-label={`${goal.label}: ${goal.today.minutes} de ${goal.dailyGoalMinutes} minutos`}
-    class="mt-4 h-2 w-full overflow-hidden rounded-full bg-muted"
+    class:list={[
+      'mt-4 h-2 w-full overflow-hidden rounded-full',
+      // Sobre una tarjeta `muted`, un carril `muted` sería invisible.
+      libre ? 'bg-border' : 'bg-muted',
+    ]}
   >
     <div
       class="h-full rounded-full bg-primary transition-[width] duration-500"
@@ -75,7 +117,12 @@ const cta = goal.hasOpenSession
     */}
     <a
       href={`/sesion/${goal.goalId}`}
-      class="flex min-h-11 items-center rounded-card bg-primary px-4 text-sm font-medium text-on-primary transition hover:bg-primary-hover"
+      class:list={[
+        'flex min-h-11 items-center rounded-card px-4 text-sm font-medium transition',
+        libre
+          ? 'border border-border bg-surface text-text hover:border-primary hover:text-primary'
+          : 'bg-primary text-on-primary hover:bg-primary-hover',
+      ]}
     >
       {cta}
     </a>

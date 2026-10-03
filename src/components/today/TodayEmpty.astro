@@ -1,11 +1,24 @@
 ---
 import Card from '@/components/ui/Card.astro';
+
+/**
+ * El único estado de verdad vacío de la Vista de Hoy: **no hay ni un objetivo
+ * activo**. O están los tres archivados, o es una cuenta que todavía no pasó por
+ * Ajustes.
+ *
+ * Antes esto se enseñaba también los días libres, cuando el usuario sí tenía sus
+ * tres objetivos configurados y lo único que pasaba era que ninguno caía en ese
+ * día de la semana. Para eso ahora están las tarjetas en su estado secundario:
+ * un domingo no es una pantalla vacía, es un domingo.
+ */
 ---
 
 <Card>
   <p class="text-text-soft">
-    Hoy no te comprometiste a ningún objetivo, así que no pierdes ningún perrito.
-    Si quieres cambiarlo, elige tus días en{' '}
-    <a class="font-medium text-primary hover:underline" href="/ajustes">Ajustes</a>.
+    No tienes objetivos activos, así que no hay nada que perder ni que ganar. Elige
+    tus días en{' '}
+    <a class="font-medium text-primary hover:underline" href="/ajustes">Ajustes</a>, o
+    reactiva uno que archivaste desde{' '}
+    <a class="font-medium text-primary hover:underline" href="/progreso">Progreso</a>.
   </p>
 </Card>

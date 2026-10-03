@@ -88,21 +88,16 @@ export async function listArchivedGoals(userId: string): Promise<WithId<GoalDoc>
     .toArray();
 }
 
-/**
- * Los objetivos que tocan HOY. Es lo que pinta la Vista de Hoy.
+/*
+ * Aquí vivía `goalsForDay(userId, weekday)`, que filtraba en Mongo por
+ * `scheduledDays: weekday`. Se quedó sin un solo uso cuando la Vista de Hoy pasó
+ * a pintar todos los objetivos activos y a decidir la jerarquía visual con
+ * `isScheduledToday`: el día de la semana dejó de ser un filtro de consulta para
+ * ser una propiedad de la tarjeta.
  *
- * `scheduledDays: weekday` sobre un array hace *array-contains* en MongoDB: no
- * hace falta `$elemMatch` para un solo valor.
+ * No se conserva "por si acaso". Una función de repositorio sin usos es una
+ * consulta que nadie ha visto ejecutarse contra datos reales.
  */
-export async function goalsForDay(
-  userId: string,
-  weekday: IsoWeekday,
-): Promise<WithId<GoalDoc>[]> {
-  return (await col.goals())
-    .find({ userId, archivedAt: null, scheduledDays: weekday })
-    .sort({ order: 1 })
-    .toArray();
-}
 
 export async function findGoal(ref: GoalRef): Promise<WithId<GoalDoc> | null> {
   return (await col.goals()).findOne(ref);

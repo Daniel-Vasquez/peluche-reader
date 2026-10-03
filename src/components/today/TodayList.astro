@@ -8,16 +8,34 @@ interface Props {
 
 const { goals } = Astro.props;
 
-// Lo pendiente primero: es lo que el usuario viene a resolver.
-const ordenados = [...goals].sort(
-  (a, b) => Number(a.today.completed) - Number(b.today.completed),
-);
+/**
+ * El orden es la mitad de la jerarquía: con todos los objetivos en pantalla, lo
+ * que decide si la lista se lee bien es qué llega primero.
+ *
+ * Una sesión abierta va por delante de todo, incluso si es de un objetivo que no
+ * tocaba hoy: hay un cronómetro corriendo y encontrarlo no puede costar un
+ * barrido de la página.
+ */
+function rango(goal: TodayGoalView): number {
+  if (goal.hasOpenSession) return 0;
+  if (goal.isScheduledToday && !goal.today.completed) return 1; // lo que viene a hacer
+  if (goal.isScheduledToday) return 2; // hoy, ya resuelto
+  return 3; // día libre
+}
+
+const ordenados = [...goals].sort((a, b) => rango(a) - rango(b));
 ---
 
+{/*
+  `items-stretch` (implícito en grid) más `h-full` en el elemento: dos tarjetas
+  de la misma fila acaban a la misma altura aunque una tenga contexto y la otra
+  no. Sin esto, la tarjeta sin libro ni curso queda más corta y la fila se ve
+  descuadrada en cuanto hay un número impar de objetivos.
+*/}
 <ul class="grid gap-4 sm:grid-cols-2">
   {
     ordenados.map((goal) => (
-      <li>
+      <li class="[&>article]:h-full">
         <GoalCard goal={goal} />
       </li>
     ))
