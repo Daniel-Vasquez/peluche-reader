@@ -143,8 +143,10 @@ src/
 │   │   └── __tests__/       45 tests, incluida una prueba de fuzz
 │   └── repos/               profile · sessions · progress · gameState · summary
 ├── components/              ui/ · auth/ · charts/ · icons/
-│                            today/ · SessionTimer · Shelter · ScheduleEditor
-│                            ThemeToggle
+│                            today/      tarjeta de cada objetivo de hoy
+│                            progress/   pestañas y panel por objetivo
+│                            settings/   acordeón y formulario por objetivo
+│                            SessionTimer · Shelter · ThemeToggle
 ├── layouts/                 BaseLayout · AuthLayout · AppLayout
 ├── styles/global.css        tokens de color de los dos temas
 ├── env.d.ts                 tipos de Astro.locals

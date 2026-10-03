@@ -3313,7 +3313,18 @@ Un acordeón en Progreso obligaría a montar cuatro gráficas de Recharts a la v
 (95 KB cada montaje). Unas pestañas en Ajustes impedirían ver de un vistazo qué
 tiene configurado cada objetivo.
 
-### D.2 Pestañas accesibles — `components/progress/GoalTabs.tsx`
+### D.2 Pestañas accesibles — `components/progress/GoalTabs.astro`
+
+> **Ejecutado en Astro con un script en línea, no en React.** El plan decía
+> `GoalTabs.tsx`, pero React obliga a elegir mal: los paneles llevan islas
+> `client:visible` con Recharts, y si las pestañas los reciben como hijos de un
+> componente React hay que forzar `client:load` y montar Recharts tantas veces
+> como objetivos haya, de golpe — justo lo que D.1 quería evitar. En Astro los
+> paneles se renderizan en el servidor y, al quitarles el `hidden`, su
+> `IntersectionObserver` dispara y la gráfica hidrata solo entonces.
+>
+> Medido con dos objetivos con datos: al cargar, 2 gráficas (las del panel
+> visible); al abrir Inglés, las suyas hidratan y el total sigue en 2.
 
 Patrón ARIA de pestañas completo. **Las flechas del teclado no son opcionales**:
 sin ellas una lista de pestañas es un grupo de botones con aspecto de pestañas.
@@ -3486,11 +3497,45 @@ const resumenes = await Promise.all(
 </AppLayout>
 ```
 
+> **Trampa de Astro: nada de nombres de slot dinámicos dentro de un `.map()`.**
+> La primera versión pasaba cada panel por un slot con nombre:
+>
+> ```astro
+> <div slot={`panel-${goal.goalId}`}>…</div>   <!-- ✗ -->
+> ```
+>
+> Compila sin una queja y revienta **al pedir la página**:
+> `ReferenceError: goal is not defined`. Astro saca la expresión del nombre del
+> slot fuera del closure del bucle, así que `goal` ya no existe donde se evalúa.
+> `astro build` pasa limpio: el fallo solo aparece en ejecución.
+>
+> La forma que funciona es el slot **por defecto** con un componente de panel
+> propio, `GoalTabPanel.astro`, que pone `role="tabpanel"`, el `id` y el
+> `hidden`:
+>
+> ```astro
+> <GoalTabs tabs={goals.map((g) => ({ id: g.goalId, label: g.label, type: g.type }))}>
+>   {resumenes.map(({ goal, summary }, i) => (
+>     <GoalTabPanel id={goal.goalId} activo={i === 0}>
+>       <GoalProgressPanel summary={summary} … />
+>     </GoalTabPanel>
+>   ))}
+> </GoalTabs>
+> ```
+
 **Advertencia de rendimiento**: con tres objetivos, `/progreso` pasa a hacer tres
 `buildProgressSummary`, cada uno con su agregación. Si la carga se nota, el
 siguiente paso es cargar **solo la pestaña activa** y pedir las demás por
 `/api/progress/summary?goalId=` al cambiar de pestaña — no optimizar antes de
 medirlo.
+
+### D.6 El onboarding ya no se cierra al guardar
+
+Con un solo hábito, el primer guardado de `/ajustes` era la señal de que el
+usuario había elegido sus días. Con varios objetivos no hay un "primer guardado"
+único: cada acordeón se guarda por su cuenta y Lectura ya viene con días por
+defecto. Ahora `onboardedAt` se sella **al entrar** a `/ajustes`, y el formulario
+de la cuenta (`ProfileSettingsForm`) solo guarda nombre y zona horaria.
 
 ### Qué necesito de tu lado
 Confirmar si quieres un **cuarto estado** en Progreso: una pestaña "Todo" con las
