@@ -312,10 +312,11 @@ sus días comprometidos, sus metadatos y su propio refugio de perritos.
 - [x] **Pausa por objetivo** · congelar las penalizaciones de un objetivo sin perder
       su configuración ni su progreso
 
-Dos criterios de la Tanda E piden escribir en la base de datos y están
-**pendientes de comprobar con la app delante**: que archivar un objetivo lo saca
-de la Vista de Hoy sin borrar sus sesiones, y que `npm run db:seed` produce las
-tres historias. El detalle está en el [plan](./planificacion.md).
+Los dos criterios de la Tanda E que faltaban por comprobar con la app delante
+—archivar un objetivo y `npm run db:seed`— se verificaron el 2026-10-07 contra una
+base desechable. Al hacerlo apareció un defecto en el **desarchivado**, que cobra
+las penalizaciones del período en que el objetivo estuvo archivado; el diagnóstico
+y el arreglo propuesto están en el [plan](./planificacion.md).
 
 El motor de gamificación **no cambia**: es puro y opera sobre un `GameState`, así
 que varios objetivos son varios estados. El [Apéndice D](./planificacion.md) lista

@@ -3653,17 +3653,41 @@ abiertas. Lo que quedaba al llegar aquí:
   las siete alineaciones del primer día. ✅
 - `npm run typecheck`, `npm test` (85) y `npm run build`, en verde. ✅
 
-**Pendiente de comprobar con la app delante**, a diferencia de las tandas C y D:
+**Comprobado con la app delante** el 2026-10-07, contra una base desechable del
+mismo clúster (`MONGODB_DB_NAME` sobrescrito y eliminada al terminar), para no
+tocar los datos reales:
 
-- Que archivar Inglés lo quita de la Vista de Hoy y deja de penalizar sin borrar
-  sus sesiones.
-- Que `npm run db:seed` produce las tres historias y `/progreso` las tres
-  pestañas con gráficas distintas.
+- **Archivar Inglés** ✅ — sale de la Vista de Hoy, deja de reconciliarse (su
+  `lastReconciledDay` ni siquiera avanza) y no pierde perritos mientras Lectura,
+  activa, sí los pierde. Sus `sessions`, `dailyProgress`, `gameEvents` y
+  `gameState` quedan intactos, y `/progreso` lo pasa a «Archivados» con su
+  resumen («Archivado el … · 20 min en total»).
+- **`npm run db:seed`** ✅ — las tres historias salen bien separadas: Lectura
+  41 sesiones / 1039 min / racha 39; Inglés 20 / 438 / racha 4 (récord 6);
+  Estudio 6 / 360 / racha 5. `/progreso` pinta tres pestañas con 11, 5 y 5 barras
+  y mapas de calor de 38, 19 y 5 días con minutos.
 
-Las dos piden escribir en la base de datos, y el `.env` del proyecto apunta a un
-clúster de Atlas: el seed crea una cuenta de demostración que —por la regla de la
-Tanda 9— ningún script vuelve a borrar. Ejecutarlo es una decisión del dueño de
-esa base, no del script.
+Para ejecutarlo hay que apuntar `SEED_USER_EMAIL` a un correo que no se use: el
+script aborta si la cuenta ya existe, y el `.env` del proyecto lo tiene puesto al
+correo real del dueño.
+
+### ⚠️ Defecto encontrado al verificar: desarchivar cobra el período archivado
+
+Un objetivo archivado **no se reconcilia**, así que su `lastReconciledDay` se
+congela. Al desarchivarlo vuelve a `listGoals`, la siguiente visita encuentra
+todos esos días pendientes y los cobra de golpe.
+
+Medido: un objetivo archivado cinco días volvió con **7 → 3 perritos** y cuatro
+eventos `penalty` con fecha del período en que estaba archivado.
+
+Es el mismo problema que resuelve la Tanda F para la pausa, y tiene la misma
+forma de arreglo: tratar «archivado» como «pausado» en `reconcileAndPersist`
+(`goal.isPaused === true || goal.archivedAt !== null`) y reconciliar en el
+endpoint **antes** de limpiar `archivedAt`, de modo que el hueco se cierre como
+días pausados y no quede nada que cobrar hacia atrás.
+
+No se arregla aquí porque cambia una regla del juego, y eso lo decide el dueño
+del balance (convención 7 de `CLAUDE.md`).
 
 ---
 
