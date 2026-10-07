@@ -17,7 +17,6 @@ const { title, heading, subheading } = Astro.props;
 // El middleware garantiza que haya usuario en /app, /progreso y /ajustes.
 const user = Astro.locals.user!;
 const greeting = firstName(user.name);
-const appName = import.meta.env.PUBLIC_APP_NAME ?? 'Peluche Reader';
 
 const NAV: { href: string; label: string; icon: NavIconName }[] = [
   { href: '/', label: 'Hoy', icon: 'hoy' },
@@ -51,12 +50,6 @@ const isActive = (href: string) => current === href || current.startsWith(`${hre
           cabecera. En móvil el primer item de la navegación ("Hoy") ya lleva al
           inicio, así que no se pierde ningún camino.
         */}
-        <a
-          href="/"
-          class="hidden min-h-11 items-center text-sm font-semibold tracking-wide whitespace-nowrap text-primary uppercase sm:flex"
-        >
-          {appName}
-        </a>
 
         <nav aria-label="Navegación principal" class="flex items-center gap-1">
           {
