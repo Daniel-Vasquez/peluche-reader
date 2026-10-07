@@ -112,7 +112,7 @@ export default function AuthForm({ mode, next }: Props) {
 
     // Recarga completa (no history.pushState) para que el middleware del
     // servidor vea la cookie de sesión recién creada.
-    window.location.href = next && next.startsWith('/') ? next : '/app';
+    window.location.href = next && next.startsWith('/') ? next : '/';
   }
 
   return (

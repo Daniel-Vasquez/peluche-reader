@@ -51,7 +51,7 @@ export interface TodayGoalView {
  * Arma las tarjetas del día.
  *
  * Trae **todos** los objetivos activos, no solo los de hoy, y marca cada uno con
- * `isScheduledToday`. Filtrar aquí era lo que dejaba `/app` con una sola frase
+ * `isScheduledToday`. Filtrar aquí era lo que dejaba la raíz con una sola frase
  * los días libres: la pantalla no estaba vacía por falta de datos, sino porque
  * la consulta descartaba lo que sí había que enseñar.
  *

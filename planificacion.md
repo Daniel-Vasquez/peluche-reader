@@ -978,8 +978,8 @@ declare global {
   `session`.
 - La cookie `better-auth.session_token` sale con `Max-Age=2592000` (30 días),
   `HttpOnly` y `SameSite=Lax`: es **persistente**, no de sesión de navegador.
-- `/app`, `/progreso` y `/ajustes` sin sesión → 302 a `/login?next=…`.
-- `/login` y `/registro` **con** sesión → 302 a `/app`.
+- `/`, `/progreso`, `/ajustes` y `/sesion/*` sin sesión → 302 a `/login?next=…`.
+- `/login` y `/registro` **con** sesión → 302 a `/`.
 - `npm run build` prerenderiza en milisegundos (prueba de que el guard
   `isPrerendered` evita conectar a Mongo en el build).
 - `/registro` pide nombre, correo y contraseña; `/login` **solo** correo y
@@ -1043,8 +1043,7 @@ Accesibilidad: `aria-pressed={isDark}` y un `aria-label` que describe la acción
 |---|---|---|
 | `BaseLayout` | — | solo el `<script is:inline>` del tema |
 | `AuthLayout` | `/login`, `/registro` | logo + `ThemeToggle` |
-| `AppLayout` | `/app`, `/progreso`, `/ajustes` | logo + nav + `ThemeToggle` + `SignOutButton` |
-| `index.astro` | `/` | logo + `ThemeToggle` + `SignOutButton` si hay sesión |
+| `AppLayout` | `/` (Vista de Hoy), `/progreso`, `/ajustes`, `/sesion/*` | logo + nav + `ThemeToggle` + `SignOutButton` |
 
 **`src/layouts/AppLayout.astro`** — props `title`, `heading?`, `subheading?`.
 Exige `Astro.locals.user` (el middleware ya lo garantiza) y pinta:
@@ -3802,6 +3801,85 @@ pausa» con el cuerpo diciendo «Activo» hasta recargar.
 
 Comprobado con 7 pruebas del motor (`engine.test.ts`) y 21 aserciones de extremo a
 extremo contra una base desechable, incluyendo el caso crítico de reanudar.
+
+---
+
+# TANDA G · La Vista de Hoy pasa a la raíz
+
+Se elimina la landing y `/app` se convierte en `/`. La app deja de tener cara
+pública: quien no tiene sesión ve el login.
+
+## G.1 Movimiento de archivos
+
+```
+git rm  src/pages/index.astro    # la landing
+git mv  src/pages/app.astro  src/pages/index.astro
+```
+
+No se rompe ningún import: el archivo movido ya traía todo por el alias `@/*`
+(convención 1), que no depende de la profundidad de carpetas. Esa convención se
+paga justo aquí.
+
+## G.2 ⚠️ La trampa: `startsWith('/')` es siempre verdadero
+
+El middleware comparaba las rutas protegidas por prefijo:
+
+```ts
+const PROTECTED_PREFIXES = ['/app', '/progreso', '/ajustes'];
+```
+
+Meter `/` en esa lista deja protegidos **el propio `/login`, `/registro`, los
+endpoints de la API y los assets**, porque `'/login'.startsWith('/')` es `true`.
+El resultado no es una página rota sino un bucle: sin sesión, `/login` redirige
+a `/login`.
+
+Por eso la raíz se compara aparte, exacta:
+
+```ts
+const PROTECTED_PREFIXES = ['/progreso', '/ajustes', '/sesion'];
+const PROTECTED_PATHS = ['/'];
+
+const requiereSesion =
+  PROTECTED_PATHS.includes(path) || PROTECTED_PREFIXES.some((p) => path.startsWith(p));
+```
+
+## G.3 Un agujero que estaba desde la Tanda C
+
+`/sesion/[goalId]` **nunca estuvo en la lista de rutas protegidas**, pero su
+frontmatter hace `const user = Astro.locals.user!`. Sin sesión, ese `!` miente y
+la página reventaba: `/sesion/reading` devolvía **500** en vez de redirigir.
+
+Se arregla añadiendo `/sesion` a los prefijos. La afirmación que el `!` hace
+—"el middleware ya garantizó que hay usuario"— ahora es cierta.
+
+## G.4 Enlaces actualizados
+
+| Archivo | Qué |
+|---|---|
+| `middleware.ts` | prefijos, ruta exacta y destino con sesión |
+| `AuthForm.tsx` | destino tras login/registro cuando no hay `next` |
+| `AppLayout.astro` | logo y enlace "Hoy" de la navegación |
+| `GoalProgressPanel.astro` | enlace a la Vista de Hoy |
+| `sesion/[goalId].astro` | "Volver a hoy" y el redirect de objetivo inexistente |
+| `404.astro` · `500.astro` | botón de vuelta |
+| `SignOutButton.tsx` | **a `/login`, no a `/`** |
+
+Lo último no es cosmético: cerrar sesión mandaba a `/`, que ahora está protegida,
+así que el usuario daba un salto de más (`/` → `/login`). Se va directo.
+
+## G.5 Criterio de aceptación
+
+- [x] Sin sesión: `/`, `/progreso`, `/ajustes` y `/sesion/*` → 302 a
+      `/login?next=…`; `/login`, `/registro`, `/api/*` y los assets → 200.
+- [x] Con sesión: `/` es la Vista de Hoy, con su saludo, sus tarjetas y el enlace
+      "Hoy" marcado como página actual.
+- [x] `/app` responde **404**.
+- [x] Con sesión, `/login` y `/registro` → 302 a `/`.
+- [x] Login sin `next` aterriza en `/`; con `next=/progreso`, en `/progreso`.
+- [x] "Salir" lleva a `/login` de un salto.
+- [x] Usuario nuevo: sigue yendo a `/ajustes?onboarding=1`.
+
+20 comprobaciones en navegador contra una base desechable.
 
 ---
 

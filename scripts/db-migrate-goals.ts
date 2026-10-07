@@ -14,7 +14,7 @@
  * no tienen `goalId` falla, porque todos valdrían `null` y colisionarían.
  *
  * ⚠️ **Para el servidor antes de migrar** (`astro dev stop`). Cualquier visita a
- * `/app` dispara `ensureDefaultGoals`, que crea los objetivos con los valores por
+ * la Vista de Hoy dispara `ensureDefaultGoals`, que crea los objetivos con los valores por
  * defecto. Si eso pasa antes de la migración, un `$setOnInsert` no haría nada y
  * el objetivo de lectura se quedaría sin la configuración del usuario. Ocurrió en
  * la ejecución real; por eso ahora el script usa `$set` para los campos que el

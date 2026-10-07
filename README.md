@@ -170,9 +170,8 @@ src/
 ├── styles/global.css        tokens de color de los dos temas
 ├── env.d.ts                 tipos de Astro.locals
 └── pages/
-    ├── index.astro          landing (reconoce si hay sesión)
+    ├── index.astro          Vista de Hoy: los objetivos que tocan (ruta protegida)
     ├── login · registro
-    ├── app.astro            Vista de Hoy: los objetivos que tocan
     ├── sesion/[goalId]      cronómetro + refugio de un objetivo
     ├── progreso.astro       dashboard: una pestaña por objetivo + archivados
     ├── ajustes.astro        la cuenta + un acordeón por objetivo

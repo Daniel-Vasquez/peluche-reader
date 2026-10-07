@@ -143,7 +143,7 @@ async function reconcileAndPersist(
 }
 
 /**
- * Se llama al ENTRAR a cualquier vista de la app (`/app`, `/progreso`,
+ * Se llama al ENTRAR a cualquier vista de la app (`/`, `/progreso`,
  * `/ajustes`). Garantiza perfil y estado, liquida las penalizaciones diferidas y
  * devuelve todo lo que la interfaz necesita pintar.
  *

@@ -30,7 +30,7 @@ const user = Astro.locals.user;
 
       <div class="mt-8 flex flex-wrap gap-3">
         <a
-          href={user ? '/app' : '/'}
+          href="/"
           class="rounded-card bg-primary px-5 py-2.5 font-medium text-on-primary transition hover:bg-primary-hover"
         >
           {user ? 'Volver a mi refugio' : 'Ir al inicio'}

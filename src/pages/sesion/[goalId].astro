@@ -33,7 +33,7 @@ const goal = await findGoal(ref);
  * navegador, y dejar cronometrar un objetivo archivado crearía sesiones que
  * `syncAllGoals` ya no reconcilia nunca.
  */
-if (!goal || goal.archivedAt !== null) return Astro.redirect('/app', 302);
+if (!goal || goal.archivedAt !== null) return Astro.redirect('/', 302);
 
 const now = new Date();
 const profile = await ensureProfile(user.id);
@@ -59,7 +59,7 @@ const daySeconds = await completedSecondsForDay(ref, todayKey);
 
 <AppLayout title={goal.label} heading={goal.label} subheading={goalContext(goal.metadata) ?? undefined}>
   <p class="mb-4">
-    <a href="/app" class="text-sm font-medium text-primary hover:underline">← Volver a hoy</a>
+    <a href="/" class="text-sm font-medium text-primary hover:underline">← Volver a hoy</a>
   </p>
 
   {

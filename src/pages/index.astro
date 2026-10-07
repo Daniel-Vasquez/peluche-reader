@@ -1,102 +1,57 @@
 ---
-import BaseLayout from '@/layouts/BaseLayout.astro';
-import ThemeToggle from '@/components/ThemeToggle';
-import SignOutButton from '@/components/auth/SignOutButton';
+import AppLayout from '@/layouts/AppLayout.astro';
+import TodayEmpty from '@/components/today/TodayEmpty.astro';
+import TodayList from '@/components/today/TodayList.astro';
+import { syncAllGoals } from '@/lib/game/service';
+import { ensureProfile } from '@/lib/repos/profile';
+import { buildTodayView } from '@/lib/today-view';
 import { firstName } from '@/lib/name';
-import { GAME } from '@/lib/game/config';
+import { dayKey, isoWeekday } from '@/lib/time';
 
-/*
- * Renderizado en servidor, no prerenderizada: la landing tiene que saber si ya
- * hay sesión. Ofrecer "Crear cuenta" a alguien que ya entró es desorientador, y
- * dejarle sin salida (ni toggle de tema ni cerrar sesión) lo es más.
- * El coste es mínimo: la página no consulta la base de datos.
- */
 export const prerender = false;
 
-const appName = import.meta.env.PUBLIC_APP_NAME ?? 'Peluche Reader';
-const user = Astro.locals.user;
+const user = Astro.locals.user!;
+const profile = await ensureProfile(user.id);
+
+if (profile.onboardedAt === null) {
+  return Astro.redirect('/ajustes?onboarding=1', 302);
+}
+
+const now = new Date();
+
+// Reconcilia TODOS los objetivos antes de pintar: las penalizaciones de uno no
+// pueden depender de que el usuario abra su pantalla.
+await syncAllGoals(user.id, now);
+
+const todayKey = dayKey(now, profile.timezone);
+const weekday = isoWeekday(now, profile.timezone);
+/*
+ * `goals` son TODOS los objetivos activos, no solo los de hoy.
+ *
+ * El subtítulo y el estado vacío cuentan por separado: lo que el usuario tiene
+ * que hacer hoy son los `programados`, pero la pantalla solo está de verdad
+ * vacía si no hay ningún objetivo activo —todos archivados, o una cuenta recién
+ * migrada—. Mezclar los dos casos era lo que hacía que un domingo pareciera un
+ * error de la app.
+ */
+const goals = await buildTodayView(user.id, weekday, todayKey);
+
+const programados = goals.filter((g) => g.isScheduledToday);
+const pendientes = programados.filter((g) => !g.today.completed);
+const greeting = firstName(user.name);
+
+const subheading =
+  goals.length === 0
+    ? 'Todavía no tienes objetivos activos.'
+    : programados.length === 0
+      ? 'Hoy no te toca ninguno: descansa, que no pierdes ni un perrito.'
+      : pendientes.length === 0
+        ? '¡Todo hecho por hoy!'
+        : pendientes.length === programados.length
+          ? `Tienes ${programados.length} ${programados.length === 1 ? 'objetivo' : 'objetivos'} por delante.`
+          : `Te ${pendientes.length === 1 ? 'queda' : 'quedan'} ${pendientes.length} de ${programados.length}.`;
 ---
 
-<BaseLayout title={appName}>
-  <div class="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-6">
-    <header class="flex items-center justify-between gap-4 py-5">
-      <p class="text-sm font-semibold tracking-wide text-primary uppercase">
-        {appName}
-      </p>
-      <div class="flex items-center gap-2">
-        <ThemeToggle client:load />
-        {user && <SignOutButton client:load />}
-      </div>
-    </header>
-
-    <main class="flex grow flex-col justify-center py-10">
-      <h1 class="text-4xl leading-tight font-semibold text-balance sm:text-5xl">
-        Lee todos los días.
-        <span class="text-primary">Salva a los perritos.</span>
-      </h1>
-
-      <p class="mt-5 max-w-xl text-lg text-pretty text-text-soft">
-        Elige qué días te comprometes a leer, cronometra tus sesiones y mira crecer
-        tu refugio. Cada día que fallas, un perrito se va; cada diez minutos que
-        lees, vuelve a casa.
-      </p>
-
-      <div class="mt-9 flex flex-wrap gap-3">
-        {
-          user ? (
-            <>
-              <a
-                href="/app"
-                class="rounded-card bg-primary px-5 py-2.5 font-medium text-on-primary transition hover:bg-primary-hover"
-              >
-                Seguir leyendo, {firstName(user.name)}
-              </a>
-              <a
-                href="/progreso"
-                class="rounded-card border border-border bg-surface px-5 py-2.5 font-medium text-text transition hover:border-primary hover:text-primary"
-              >
-                Ver mi progreso
-              </a>
-            </>
-          ) : (
-            <>
-              <a
-                href="/registro"
-                class="rounded-card bg-primary px-5 py-2.5 font-medium text-on-primary transition hover:bg-primary-hover"
-              >
-                Crear cuenta
-              </a>
-              <a
-                href="/login"
-                class="rounded-card border border-border bg-surface px-5 py-2.5 font-medium text-text transition hover:border-primary hover:text-primary"
-              >
-                Ya tengo cuenta
-              </a>
-            </>
-          )
-        }
-      </div>
-
-      <dl class="mt-16 grid gap-4 sm:grid-cols-3">
-        <div class="rounded-card border border-border bg-surface p-5">
-          <dt class="text-sm text-text-soft">Umbral mínimo</dt>
-          <dd class="mt-1 text-2xl font-semibold text-primary-bright">
-            {GAME.BASE_MINUTES} min
-          </dd>
-        </div>
-        <div class="rounded-card border border-border bg-surface p-5">
-          <dt class="text-sm text-text-soft">Refugio inicial</dt>
-          <dd class="mt-1 text-2xl font-semibold text-accent">
-            {GAME.START_DOGS} perritos
-          </dd>
-        </div>
-        <div class="rounded-card border border-border bg-surface p-5">
-          <dt class="text-sm text-text-soft">Día programado sin leer</dt>
-          <dd class="mt-1 text-2xl font-semibold text-alert">
-            −{GAME.PENALTY_PER_MISS} perrito
-          </dd>
-        </div>
-      </dl>
-    </main>
-  </div>
-</BaseLayout>
+<AppLayout title="Hoy" heading={`Hola, ${greeting}`} subheading={subheading}>
+  {goals.length === 0 ? <TodayEmpty /> : <TodayList goals={goals} />}
+</AppLayout>

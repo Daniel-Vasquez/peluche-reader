@@ -1,11 +1,24 @@
 import { defineMiddleware } from 'astro:middleware';
 import { getAuth } from '@/lib/auth';
 
-/** Rutas que exigen sesión. Se comparan con `startsWith`. */
-const PROTECTED_PREFIXES = ['/app', '/progreso', '/ajustes'];
+/**
+ * Rutas que exigen sesión y se comparan por **prefijo**.
+ *
+ * `/` no puede estar aquí: `'/login'.startsWith('/')` es `true`, así que la
+ * Vista de Hoy en la raíz dejaría protegido el propio login, el registro, los
+ * endpoints y los assets, y la app entera entraría en un bucle de redirecciones.
+ * Por eso la raíz se compara aparte, exacta.
+ */
+const PROTECTED_PREFIXES = ['/progreso', '/ajustes', '/sesion'];
+
+/** Rutas que exigen sesión con **coincidencia exacta**. */
+const PROTECTED_PATHS = ['/'];
 
 /** Rutas que no tienen sentido con sesión abierta. Coincidencia exacta. */
 const GUEST_ONLY_PATHS = ['/login', '/registro'];
+
+/** La Vista de Hoy: a donde va el usuario con sesión abierta. */
+const HOME_PATH = '/';
 
 export const onRequest = defineMiddleware(async (context, next) => {
   // Las rutas prerenderizadas no tienen usuario: se generan en `astro build`,
@@ -33,12 +46,15 @@ export const onRequest = defineMiddleware(async (context, next) => {
   context.locals.user = data?.user ?? null;
   context.locals.session = data?.session ?? null;
 
-  if (!context.locals.user && PROTECTED_PREFIXES.some((p) => path.startsWith(p))) {
+  const requiereSesion =
+    PROTECTED_PATHS.includes(path) || PROTECTED_PREFIXES.some((p) => path.startsWith(p));
+
+  if (!context.locals.user && requiereSesion) {
     return context.redirect(`/login?next=${encodeURIComponent(path)}`, 302);
   }
 
   if (context.locals.user && GUEST_ONLY_PATHS.includes(path)) {
-    return context.redirect('/app', 302);
+    return context.redirect(HOME_PATH, 302);
   }
 
   return next();

@@ -20,7 +20,7 @@ const greeting = firstName(user.name);
 const appName = import.meta.env.PUBLIC_APP_NAME ?? 'Peluche Reader';
 
 const NAV: { href: string; label: string; icon: NavIconName }[] = [
-  { href: '/app', label: 'Hoy', icon: 'hoy' },
+  { href: '/', label: 'Hoy', icon: 'hoy' },
   { href: '/progreso', label: 'Progreso', icon: 'progreso' },
   { href: '/ajustes', label: 'Ajustes', icon: 'ajustes' },
 ];
@@ -52,7 +52,7 @@ const isActive = (href: string) => current === href || current.startsWith(`${hre
           inicio, así que no se pierde ningún camino.
         */}
         <a
-          href="/app"
+          href="/"
           class="hidden min-h-11 items-center text-sm font-semibold tracking-wide whitespace-nowrap text-primary uppercase sm:flex"
         >
           {appName}

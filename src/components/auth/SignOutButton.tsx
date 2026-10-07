@@ -16,7 +16,7 @@ export default function SignOutButton() {
       onClick={async () => {
         setPending(true);
         await signOut();
-        window.location.href = '/';
+        window.location.href = '/login';
       }}
     >
       {pending ? 'Saliendo…' : 'Salir'}

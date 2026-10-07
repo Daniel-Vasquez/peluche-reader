@@ -17,7 +17,7 @@ export function defaultTimezone(): string {
  * Devuelve el perfil del usuario, creándolo si no existe. Idempotente.
  *
  * `$setOnInsert` + `upsert` en una sola operación: dos peticiones simultáneas
- * (por ejemplo dos pestañas abriendo `/app`) no pueden crear dos perfiles,
+ * (por ejemplo dos pestañas abriendo `/`) no pueden crear dos perfiles,
  * porque el índice único en `userId` lo impide.
  */
 export async function ensureProfile(
@@ -60,7 +60,7 @@ export interface ProfilePatch {
 /**
  * Aplica cambios al perfil y marca el onboarding como completado.
  *
- * El primer guardado es lo que cierra el onboarding: hasta entonces `/app`
+ * El primer guardado es lo que cierra el onboarding: hasta entonces la raíz
  * redirige a `/ajustes`, porque sin días comprometidos la gamificación no puede
  * penalizar ni recompensar nada.
  */
