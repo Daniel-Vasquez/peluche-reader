@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { badRequest, json, notFound, readJson, unauthorized } from '@/lib/api';
+import { syncGoal } from '@/lib/game/service';
 import { findGoal, updateGoal } from '@/lib/repos/goals';
 import { GOAL_OPTIONS } from '@/lib/repos/profile';
 import type { IsoWeekday } from '@/lib/time';
@@ -56,6 +57,11 @@ const PatchSchema = z.object({
     )
     .optional(),
   metadata: MetadataSchema.optional(),
+  /**
+   * Pausar o reanudar. Conserva los días comprometidos, el refugio y la racha;
+   * solo congela las penalizaciones.
+   */
+  isPaused: z.boolean({ message: 'La pausa debe ser verdadero o falso.' }).optional(),
   archived: z.boolean().optional(),
 });
 
@@ -79,6 +85,21 @@ export const PATCH: APIRoute = async ({ locals, params, request }) => {
   // y dejar el metadato incoherente con su tipo.
   if (parsed.data.metadata && parsed.data.metadata.type !== goal.type) {
     return badRequest('Los metadatos no corresponden al tipo de este objetivo.');
+  }
+
+  /*
+   * Cerrar los días pendientes ANTES de tocar `isPaused`.
+   *
+   * La reconciliación juzga cada día con el estado *actual* del objetivo. Si la
+   * bandera cambiase primero, reanudar tras una semana de pausa encontraría siete
+   * días sin reconciliar y los cobraría de golpe — justo lo que la pausa promete
+   * evitar. Y al revés: pausar justo antes de entrar perdonaría días que sí
+   * tocaba cobrar.
+   *
+   * Vale para los dos sentidos, así que es una sola regla y no dos casos.
+   */
+  if (parsed.data.isPaused !== undefined && parsed.data.isPaused !== goal.isPaused) {
+    await syncGoal(ref);
   }
 
   const { archived, ...resto } = parsed.data;

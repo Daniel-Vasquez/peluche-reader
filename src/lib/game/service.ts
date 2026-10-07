@@ -112,12 +112,14 @@ async function reconcileAndPersist(
   // inglés no puede depender del calendario de lectura.
   // El vocabulario sale del TIPO del objetivo: un día fallado de inglés no puede
   // registrarse como "Día programado sin leer".
+  // La pausa es del OBJETIVO: pausar inglés no puede dejar de penalizar lectura.
   const result = reconcile(
     state,
     todayKey,
     goal.scheduledDays,
     completedDays,
     vocabularyFor(goal.type),
+    goal.isPaused === true,
   );
 
   if (result.events.length === 0 && result.state.lastReconciledDay === state.lastReconciledDay) {

@@ -227,6 +227,75 @@ describe('reconcile', () => {
   });
 });
 
+describe('reconcile con el objetivo en pausa', () => {
+  // 2026-09-21 es lunes. WEEKDAYS = lunes a viernes.
+  const base = () => ({
+    ...initialState('2026-W39', '2026-09-20'),
+    lastReconciledDay: '2026-09-20',
+  });
+
+  it('una semana programada sin cumplir no cuesta ni un perrito', () => {
+    const activo = reconcile(base(), '2026-09-26', WEEKDAYS, new Set(), VOCAB, false);
+    const pausado = reconcile(base(), '2026-09-26', WEEKDAYS, new Set(), VOCAB, true);
+
+    expect(activo.state.dogs).toBeLessThan(7);
+    expect(pausado.state.dogs).toBe(7);
+    expect(pausado.events.filter((e) => e.type === 'penalty')).toHaveLength(0);
+    expectInvariants(pausado.state);
+  });
+
+  it('no rompe la racha', () => {
+    const conRacha = { ...base(), streak: 5, bestStreak: 9 };
+    const r = reconcile(conRacha, '2026-09-26', WEEKDAYS, new Set(), VOCAB, true);
+    expect(r.state.streak).toBe(5);
+    expect(r.state.bestStreak).toBe(9);
+  });
+
+  it('avanza lastReconciledDay igual, así no se acumula deuda', () => {
+    const r = reconcile(base(), '2026-09-26', WEEKDAYS, new Set(), VOCAB, true);
+    expect(r.state.lastReconciledDay).toBe('2026-09-25');
+
+    // Y al reanudar, esos días ya están cerrados: no se cobran hacia atrás.
+    const trasReanudar = reconcile(r.state, '2026-09-26', WEEKDAYS, new Set(), VOCAB, false);
+    expect(trasReanudar.events.filter((e) => e.type === 'penalty')).toHaveLength(0);
+    expect(trasReanudar.state.dogs).toBe(7);
+  });
+
+  it('distingue en el historial un día pausado de uno libre', () => {
+    // Del 21 (lun) al 27 (dom): cinco días programados y dos de descanso.
+    const r = reconcile(base(), '2026-09-28', WEEKDAYS, new Set(), VOCAB, true);
+    const pausados = r.days.filter((d) => d.outcome === 'paused');
+    const libres = r.days.filter((d) => d.outcome === 'rest');
+
+    expect(pausados).toHaveLength(5);
+    expect(libres).toHaveLength(2);
+    expect(r.days.some((d) => d.outcome === 'missed')).toBe(false);
+  });
+
+  it('lo que sí se practica sigue contando', () => {
+    const leyo = new Set(['2026-09-21', '2026-09-22']);
+    const r = reconcile(base(), '2026-09-23', WEEKDAYS, new Set(leyo), VOCAB, true);
+    expect(r.state.streak).toBe(2);
+    expect(r.days.filter((d) => d.outcome === 'completed')).toHaveLength(2);
+  });
+
+  it('sigue siendo idempotente', () => {
+    const first = reconcile(base(), '2026-09-26', WEEKDAYS, new Set(), VOCAB, true);
+    const second = reconcile(first.state, '2026-09-26', WEEKDAYS, new Set(), VOCAB, true);
+    expect(second.events).toEqual([]);
+    expect(second.state).toEqual(first.state);
+  });
+
+  it('un mes entero en pausa deja el refugio intacto', () => {
+    const s = { ...initialState('2026-W36', '2026-08-31'), lastReconciledDay: '2026-08-31' };
+    const r = reconcile(s, '2026-10-01', WEEKDAYS, new Set(), VOCAB, true);
+    expect(r.state.dogs).toBe(7);
+    expect(r.state.weekLosses).toBe(0);
+    expect(r.state.lastReconciledDay).toBe('2026-09-30');
+    expectInvariants(r.state);
+  });
+});
+
 describe('escenario narrativo del Apéndice B', () => {
   it('reproduce la semana de Influencia paso a paso', () => {
     // Lunes 2026-09-21, compromiso L–V, refugio inicial de 7.

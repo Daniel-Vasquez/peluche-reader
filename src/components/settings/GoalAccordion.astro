@@ -29,9 +29,24 @@ const dias =
   goal.scheduledDays.length === 0
     ? 'Sin días · inactivo'
     : goal.scheduledDays.map((d) => WEEKDAY_LABELS[d].short).join(' · ');
+
+/*
+ * El resumen plegado tiene que delatar la pausa: si no, un objetivo pausado se
+ * ve idéntico a uno activo hasta que se abre.
+ *
+ * El distintivo se muestra con `data-paused` en el `<details>` y no con una
+ * cadena ya montada, porque el interruptor vive en la isla de React de dentro y
+ * esto es HTML del servidor. Sin este enlace, alternar la pausa dejaba la
+ * cabecera diciendo "En pausa" con el cuerpo diciendo "Activo" hasta recargar.
+ */
 ---
 
-<details open={abierto} class="group rounded-card border border-border bg-surface">
+<details
+  open={abierto}
+  data-goal={goal.goalId}
+  data-paused={String(goal.isPaused)}
+  class="group rounded-card border border-border bg-surface"
+>
   <summary
     class="flex min-h-11 cursor-pointer list-none items-center gap-3 px-5 py-3 [&::-webkit-details-marker]:hidden"
   >
@@ -43,7 +58,9 @@ const dias =
       <span class="font-medium">{goal.label}</span>
       {/* El resumen plegado dice lo esencial sin tener que abrirlo. */}
       <span class="block truncate text-sm text-text-soft">
-        {dias}{contexto && ` · ${contexto}`}
+        <span data-pausa-badge>En pausa<span aria-hidden> · </span></span>{dias}{
+          contexto && ` · ${contexto}`
+        }
       </span>
     </span>
 
@@ -61,6 +78,7 @@ const dias =
       scheduledDays={goal.scheduledDays}
       dailyGoalMinutes={goal.dailyGoalMinutes}
       metadata={goal.metadata}
+      isPaused={goal.isPaused}
       goalOptions={GOAL_OPTIONS}
     />
 
@@ -74,3 +92,10 @@ const dias =
     </div>
   </div>
 </details>
+
+<style>
+  /* El distintivo solo existe mientras el objetivo esté pausado. */
+  details:not([data-paused='true']) [data-pausa-badge] {
+    display: none;
+  }
+</style>

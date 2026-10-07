@@ -31,6 +31,9 @@ export interface TodayGoalView {
    */
   isScheduledToday: boolean;
 
+  /** En pausa: hoy no cuesta perritos aunque esté programado. */
+  isPaused: boolean;
+
   today: {
     minutes: number;
     dogsAwarded: number;
@@ -89,6 +92,7 @@ export async function buildTodayView(
         context: goalContext(goal.metadata),
         dailyGoalMinutes: goal.dailyGoalMinutes,
         isScheduledToday: goal.scheduledDays.includes(weekday),
+        isPaused: goal.isPaused === true,
         today: {
           minutes,
           dogsAwarded: row?.dogsAwarded ?? 0,

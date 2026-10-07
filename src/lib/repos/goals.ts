@@ -53,6 +53,7 @@ export async function ensureDefaultGoals(userId: string): Promise<void> {
           $setOnInsert: {
             userId,
             ...plantilla,
+            isPaused: false,
             order,
             archivedAt: null,
             createdAt: now,
@@ -62,6 +63,18 @@ export async function ensureDefaultGoals(userId: string): Promise<void> {
         { upsert: true },
       ),
     ),
+  );
+
+  /*
+   * Los objetivos creados antes de que existiera la pausa no tienen el campo, y
+   * `$setOnInsert` no los toca. Se rellena aquí en vez de con un script porque
+   * `false` es exactamente el comportamiento que ya tenían: sin pausa.
+   *
+   * Vale un `updateMany` por visita: no encuentra nada en cuanto corre una vez.
+   */
+  await goals.updateMany(
+    { userId, isPaused: { $exists: false } },
+    { $set: { isPaused: false } },
   );
 }
 
@@ -109,6 +122,7 @@ export interface GoalPatch {
   scheduledDays?: IsoWeekday[];
   dailyGoalMinutes?: number;
   metadata?: GoalMetadata;
+  isPaused?: boolean;
   archivedAt?: Date | null;
 }
 

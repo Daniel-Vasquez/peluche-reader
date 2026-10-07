@@ -3667,6 +3667,120 @@ esa base, no del script.
 
 ---
 
+# TANDA F · Pausar y reanudar un objetivo
+
+Congelar las penalizaciones de **un** objetivo sin perder nada de lo construido:
+vacaciones, enfermedad, una semana imposible.
+
+## F.0 Qué congela y qué no
+
+| Se congela | Se conserva intacto |
+|---|---|
+| La pérdida de perritos por días comprometidos sin cumplir | `dogs`, `adopted`, `capacity` |
+| La ruptura de la racha | `streak` (queda donde estaba) y `bestStreak` |
+| — | `scheduledDays`, `dailyGoalMinutes`, metadatos |
+| — | Todo el historial de `sessions`, `dailyProgress` y `gameEvents` |
+
+**Practicar durante la pausa sigue dando perritos.** La pausa quita el castigo, no
+la recompensa, así que `settleSession` no se toca.
+
+### Por qué no basta con lo que ya había
+
+| | Pausar | Vaciar `scheduledDays` | `archivedAt` |
+|---|---|---|---|
+| ¿Penaliza? | no | no | no |
+| ¿Conserva los días configurados? | **sí** | **no**, hay que reescribirlos | sí |
+| ¿Sigue a la vista? | sí, marcado | sí | no |
+
+Vaciar los días es destructivo para la configuración y archivar saca el objetivo
+de la pantalla. Falta el gesto reversible de "esta semana no puedo".
+
+## F.1 Esquema
+
+`GoalDoc.isPaused: boolean`. Un campo del objetivo, no de la cuenta: pausar
+inglés no puede dejar de penalizar lectura.
+
+`DayOutcome` gana `'paused'`. Para el refugio un día pausado y uno libre valen lo
+mismo, pero para el historial no: `/progreso` tiene que poder decir por qué ese
+martes no costó un perrito.
+
+Los objetivos anteriores no tienen el campo y `$setOnInsert` no los toca, así que
+`ensureDefaultGoals` hace un `updateMany` de relleno. Se hace al leer y no con un
+script porque `false` es exactamente el comportamiento que ya tenían.
+
+## F.2 El motor: no hay regla nueva
+
+La pausa se resuelve en el único punto donde `reconcile` decide `miss`:
+
+```ts
+const isScheduled = scheduledDays.includes(isoWeekdayOfDayKey(day));
+const penaliza = isScheduled && !isPaused;
+
+const applied = applyAction(s, { kind: penaliza ? 'miss' : 'rest', dayKey: day }, vocab);
+days.push({ dayKey: day, outcome: penaliza ? 'missed' : isScheduled ? 'paused' : 'rest' });
+```
+
+`rest` ya existía para los días libres y hace exactamente lo que hace falta:
+avanza `lastReconciledDay`, no resta perritos y no toca la racha. **No hace falta
+una acción nueva en el reducer; hace falta no llamar a `miss`.**
+
+## F.3 El orden que decide si la funcionalidad sirve
+
+> ⚠️ **La reconciliación juzga cada día con el estado *actual* del objetivo.**
+
+Si la bandera cambiase antes de cerrar los días pendientes, reanudar tras una
+semana de pausa encontraría siete días sin reconciliar y los cobraría de golpe —
+justo lo que la pausa promete evitar. Y al revés: pausar justo antes de entrar
+perdonaría días que sí tocaba cobrar.
+
+Por eso `PATCH /api/goals/[goalId]` reconcilia **antes** de escribir:
+
+```ts
+if (parsed.data.isPaused !== undefined && parsed.data.isPaused !== goal.isPaused) {
+  await syncGoal(ref);
+}
+```
+
+Vale para los dos sentidos, así que es una sola regla y no dos casos.
+
+## F.4 Interfaz
+
+**El interruptor va en `/ajustes`**, dentro del acordeón de cada objetivo, en un
+bloque propio separado del formulario: ese control se guarda al instante y todo lo
+de abajo espera al botón, y mezclarlos dejaría al usuario sin saber qué está
+guardado.
+
+Vive **dentro** de `GoalSettingsForm` y no en una isla aparte porque el resto del
+formulario tiene que reaccionar: con el objetivo pausado, «cada día elegido en el
+que no cumplas te cuesta un perrito» es mentira. Dos islas no podrían compartir
+ese estado.
+
+**No va en las tarjetas de `/app`.** `GoalCard.astro` es HTML del servidor sin una
+línea de JavaScript; meterle un control interactivo obligaría a hidratar una isla
+por objetivo en la pantalla de entrada. La tarjeta **informa** del estado con la
+misma jerarquía visual que un día libre, porque para lo que el usuario se pregunta
+hoy —si esto le va a costar un perrito— son el mismo caso.
+
+El resumen plegado del acordeón se enlaza con `data-paused` en el `<details>`, que
+la isla actualiza al alternar. Sin ese enlace, la cabecera seguía diciendo «En
+pausa» con el cuerpo diciendo «Activo» hasta recargar.
+
+## F.5 Criterio de aceptación
+
+- [x] Pausar un objetivo no cambia ni un perrito, ni una racha, ni un día configurado.
+- [x] Una semana entera en pausa sin cumplir no cuesta nada.
+- [x] **Reanudar después no cobra ni un perrito hacia atrás**, ni al reanudar ni en
+      la visita siguiente.
+- [x] Pausar lectura deja que inglés siga perdiendo perritos con normalidad.
+- [x] Lo que se practique en pausa sigue puntuando.
+- [x] El historial distingue `paused` de `missed` y no genera eventos de penalización.
+- [x] El interruptor es `role="switch"`, funciona con teclado y es optimista.
+
+Comprobado con 7 pruebas del motor (`engine.test.ts`) y 21 aserciones de extremo a
+extremo contra una base desechable, incluyendo el caso crítico de reanudar.
+
+---
+
 # Apéndice A · Resumen del balance
 
 ```

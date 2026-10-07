@@ -51,6 +51,24 @@ No hay cron. Los días cerrados se liquidan **de forma perezosa** la próxima ve
 que el usuario entra a la app (`syncOnVisit`). El día en curso **nunca se juzga**:
 siempre se puede salvar.
 
+### Pausar un objetivo
+
+Cada objetivo tiene un interruptor en su acordeón de `/ajustes`. En pausa deja de
+penalizar, y nada más: conserva sus días comprometidos, su refugio, su racha y su
+historial, y lo que se practique **sigue dando perritos**.
+
+| | Pausar | Vaciar los días | Archivar |
+|---|---|---|---|
+| ¿Penaliza? | no | no | no |
+| ¿Conserva los días configurados? | **sí** | no, hay que volver a escribirlos | sí |
+| ¿Sigue a la vista? | sí, marcado «En pausa» | sí | no, pasa a «Archivados» |
+
+El motor resuelve un día pausado con la misma acción que un día libre, así que no
+hubo que inventar reglas nuevas: `reconcile` deja de llamar a `miss`. Como
+`lastReconciledDay` avanza igual durante la pausa, **al reanudar no queda nada
+pendiente que cobrar hacia atrás**; `/api/goals/[goalId]` reconcilia antes de
+cambiar la bandera para que eso se cumpla en los dos sentidos.
+
 ---
 
 ## Stack
@@ -168,7 +186,7 @@ src/
 |---|---|---|
 | `user` · `account` · `session` | Better Auth | — |
 | `profiles` | lo que es de la **cuenta**: zona horaria y onboarding | `userId` único |
-| `goals` | un objetivo: días comprometidos, meta, metadatos, archivado | `userId+goalId` único · `userId+archivedAt+order` |
+| `goals` | un objetivo: días comprometidos, meta, metadatos, pausa, archivado | `userId+goalId` único · `userId+archivedAt+order` |
 | `sessions` | cada sesión del cronómetro | `userId+goalId+dayKey` · `userId` único **solo en las abiertas** |
 | `dailyProgress` | agregado por objetivo y día | **`userId+goalId+dayKey` único** · `userId+goalId+weekKey` |
 | `gameState` | refugio, racha, semana en curso | **`userId+goalId` único** |
@@ -291,6 +309,8 @@ sus días comprometidos, sus metadatos y su propio refugio de perritos.
 - [x] **Tanda C** · «Vista de Hoy» en `/app` y cronómetro en `/sesion/[goalId]`
 - [x] **Tanda D** · `/progreso` por pestañas y `/ajustes` por acordeones
 - [x] **Tanda E** · Archivado de objetivos, semilla multi-objetivo y limpieza
+- [x] **Pausa por objetivo** · congelar las penalizaciones de un objetivo sin perder
+      su configuración ni su progreso
 
 Dos criterios de la Tanda E piden escribir en la base de datos y están
 **pendientes de comprobar con la app delante**: que archivar un objetivo lo saca

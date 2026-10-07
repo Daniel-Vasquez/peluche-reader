@@ -96,6 +96,7 @@ async function main(): Promise<void> {
           $setOnInsert: {
             userId,
             ...plantilla,
+            isPaused: false,
             order,
             archivedAt: null,
             createdAt: profile.createdAt ?? now,

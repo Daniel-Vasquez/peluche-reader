@@ -163,6 +163,10 @@ export function applyAction(
  *
  * @param scheduledDays Días comprometidos, ISO 1..7.
  * @param completedDays `dayKey`s con lectura suficiente (`dogsAwarded > 0`).
+ * @param isPaused     Con el objetivo en pausa, un día programado sin cumplir se
+ *   resuelve como descanso: ni resta perritos ni rompe la racha. Es opcional
+ *   porque reconciliar un objetivo activo es el caso normal, pero **el llamador
+ *   debe pasarlo siempre**: omitirlo penaliza.
  */
 export function reconcile(
   state: GameState,
@@ -170,6 +174,7 @@ export function reconcile(
   scheduledDays: readonly IsoWeekday[],
   completedDays: ReadonlySet<string>,
   vocab: GoalVocabulary,
+  isPaused = false,
 ): ReconcileResult {
   let s = state;
   const events: NewEvent[] = [];
@@ -198,15 +203,36 @@ export function reconcile(
       continue;
     }
 
+    /*
+     * La pausa se resuelve aquí, en el único punto donde se decide `miss`.
+     *
+     * Un día programado estando en pausa toma la acción `rest`, que ya existía
+     * para los días libres y hace exactamente lo que hace falta: avanza
+     * `lastReconciledDay`, no resta perritos y no toca la racha. No hace falta
+     * una acción nueva en el reducer; hace falta no llamar a `miss`.
+     *
+     * Que `lastReconciledDay` avance también durante la pausa es lo que impide
+     * que se acumule una deuda de días: al reanudar no queda nada pendiente que
+     * cobrar hacia atrás.
+     *
+     * El `outcome` sí los distingue: para el refugio un día pausado y uno libre
+     * valen igual, pero para el historial no son lo mismo, y `/progreso` tiene
+     * que poder decir por qué ese martes no costó un perrito.
+     */
     const isScheduled = scheduledDays.includes(isoWeekdayOfDayKey(day));
+    const penaliza = isScheduled && !isPaused;
+
     const applied = applyAction(
       s,
-      { kind: isScheduled ? 'miss' : 'rest', dayKey: day },
+      { kind: penaliza ? 'miss' : 'rest', dayKey: day },
       vocab,
     );
     s = applied.state;
     events.push(...applied.events);
-    days.push({ dayKey: day, outcome: isScheduled ? 'missed' : 'rest' });
+    days.push({
+      dayKey: day,
+      outcome: penaliza ? 'missed' : isScheduled ? 'paused' : 'rest',
+    });
   }
 
   return { state: s, events, days };

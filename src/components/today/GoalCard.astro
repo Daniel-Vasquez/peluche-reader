@@ -26,7 +26,19 @@ interface Props {
 
 const { goal } = Astro.props;
 
-const libre = !goal.isScheduledToday;
+/*
+ * Un objetivo en pausa se pinta como un día libre: en lo que al usuario le
+ * importa hoy —si esto le va a costar un perrito— son el mismo caso, y el motor
+ * los resuelve con la misma acción. Lo que cambia es la etiqueta, porque el
+ * motivo no es el mismo y la pausa se quita desde Ajustes.
+ *
+ * El interruptor NO está aquí. Esta tarjeta es un componente Astro sin una línea
+ * de JavaScript, y meterle un control interactivo obligaría a hidratar una isla
+ * por objetivo en la pantalla de entrada. La pausa se cambia en `/ajustes`, que
+ * es donde ya se configura todo lo demás del objetivo; aquí solo se informa.
+ */
+const enPausa = goal.isPaused;
+const libre = enPausa || !goal.isScheduledToday;
 const progreso = Math.min(1, goal.today.minutes / goal.dailyGoalMinutes);
 
 /*
@@ -72,6 +84,10 @@ const cta = goal.hasOpenSession
       goal.today.completed ? (
         <span class="shrink-0 text-sm font-medium text-primary">
           <span aria-hidden>✓</span> Hecho
+        </span>
+      ) : enPausa ? (
+        <span class="shrink-0 text-sm font-medium text-text-soft">
+          <span aria-hidden>⏸</span> En pausa
         </span>
       ) : (
         libre && (

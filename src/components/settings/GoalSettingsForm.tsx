@@ -14,6 +14,7 @@ interface Props {
   scheduledDays: IsoWeekday[];
   dailyGoalMinutes: number;
   metadata: GoalMetadata;
+  isPaused: boolean;
   goalOptions: readonly number[];
 }
 
@@ -31,6 +32,7 @@ export default function GoalSettingsForm({
   scheduledDays: initialDays,
   dailyGoalMinutes: initialGoal,
   metadata: initialMetadata,
+  isPaused: initialPaused,
   goalOptions,
 }: Props) {
   const [label, setLabel] = useState(initialLabel);
@@ -41,6 +43,61 @@ export default function GoalSettingsForm({
   const [isSaving, setIsSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /*
+   * La pausa vive en este mismo componente, y no en una isla aparte, porque el
+   * resto del formulario tiene que reaccionar a ella: con el objetivo pausado,
+   * "cada día elegido en el que no cumplas te cuesta un perrito" es mentira.
+   * Dos islas no podrían compartir ese estado.
+   */
+  const [isPaused, setIsPaused] = useState(initialPaused);
+  const [pauseSaving, setPauseSaving] = useState(false);
+  const [pauseError, setPauseError] = useState<string | null>(null);
+
+  /**
+   * Avisa al acordeón, que es HTML del servidor y queda fuera de esta isla.
+   *
+   * El `<details>` muestra "En pausa" en su resumen plegado según `data-paused`.
+   * Sin esta línea, la cabecera seguiría diciendo lo contrario que el cuerpo
+   * hasta la siguiente recarga.
+   */
+  function marcarAcordeon(paused: boolean) {
+    document
+      .querySelector(`details[data-goal="${goalId}"]`)
+      ?.setAttribute('data-paused', String(paused));
+  }
+
+  async function togglePause() {
+    if (pauseSaving) return;
+    const siguiente = !isPaused;
+
+    // Interfaz optimista: el interruptor se mueve ya. Si el servidor falla, se
+    // vuelve al valor anterior, que es el único realmente guardado.
+    setIsPaused(siguiente);
+    setPauseSaving(true);
+    setPauseError(null);
+    marcarAcordeon(siguiente);
+
+    try {
+      const response = await fetch(`/api/goals/${goalId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isPaused: siguiente }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { error?: string } | null;
+        setIsPaused(!siguiente);
+        marcarAcordeon(!siguiente);
+        setPauseError(body?.error ?? 'No pudimos cambiar la pausa.');
+      }
+    } catch {
+      setIsPaused(!siguiente);
+      marcarAcordeon(!siguiente);
+      setPauseError('No pudimos contactar con el servidor. Inténtalo de nuevo.');
+    } finally {
+      setPauseSaving(false);
+    }
+  }
 
   const errorId = `${goalId}-error`;
   const errorRef = useRef<HTMLParagraphElement>(null);
@@ -104,6 +161,69 @@ export default function GoalSettingsForm({
 
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-6">
+      {/*
+        Bloque propio y separado del resto: este control se guarda al instante,
+        mientras que todo lo de abajo espera al botón. Mezclarlos en el mismo
+        flujo visual dejaría al usuario sin saber qué ya está guardado.
+      */}
+      <div className="rounded-card border border-border bg-muted px-4 py-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="font-medium">{isPaused ? 'Objetivo en pausa' : 'Objetivo activo'}</p>
+            <p className="mt-0.5 text-sm text-text-soft">
+              {isPaused
+                ? 'No pierdes perritos aunque no cumplas. Si practicas, sigues ganándolos.'
+                : 'Los días comprometidos que no cumplas te cuestan un perrito.'}
+            </p>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2.5">
+            <span
+              className={clsx(
+                'text-sm font-medium',
+                isPaused ? 'text-text-soft' : 'text-primary',
+              )}
+            >
+              {pauseSaving ? 'Guardando...' : isPaused ? 'En pausa' : 'Activo'}
+            </span>
+
+            {/*
+              `role="switch"` y no dos botones: es un estado binario sobre una
+              sola cosa, así el lector de pantalla lo anuncia como interruptor y
+              la barra espaciadora lo cambia.
+            */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!isPaused}
+              aria-label={`${isPaused ? 'Reanudar' : 'Pausar'} ${label}`}
+              onClick={togglePause}
+              disabled={pauseSaving}
+              className={clsx(
+                'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors',
+                isPaused ? 'border-border bg-border' : 'border-primary bg-primary',
+              )}
+            >
+              <span
+                className={clsx(
+                  'inline-block h-5 w-5 rounded-full bg-surface transition-transform',
+                  isPaused ? 'translate-x-1' : 'translate-x-6',
+                )}
+              />
+            </button>
+          </div>
+        </div>
+
+        {pauseError && (
+          <p
+            role="alert"
+            className="mt-3 rounded-card border border-alert/40 bg-alert/10 px-3.5 py-2.5 text-sm text-alert-text"
+          >
+            {pauseError}
+          </p>
+        )}
+      </div>
+
       <Field id={`${goalId}-label`} label="Nombre del objetivo" errorId={errorId}>
         {(field) => (
           <input
@@ -122,7 +242,9 @@ export default function GoalSettingsForm({
       <fieldset>
         <legend className="text-sm font-medium">Días comprometidos</legend>
         <p className="mt-1 mb-3 text-sm text-text-soft">
-          Cada día elegido en el que no cumplas te cuesta un perrito de este refugio.
+          {isPaused
+            ? 'Se guardan para cuando reanudes: mientras esté en pausa no te cuestan perritos.'
+            : 'Cada día elegido en el que no cumplas te cuesta un perrito de este refugio.'}
         </p>
 
         <div className="flex flex-wrap gap-2">

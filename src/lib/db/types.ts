@@ -51,6 +51,20 @@ export interface GoalDoc {
   label: string;
   /** Días comprometidos de ESTE objetivo. ISO 1..7. Vacío = inactivo. */
   scheduledDays: IsoWeekday[];
+  /**
+   * En pausa: el objetivo **deja de penalizar**, pero sigue a la vista y sigue
+   * premiando lo que se lea.
+   *
+   * No se confunde con `archivedAt`, que es la salida definitiva: archivar lo
+   * saca de `listGoals`, de la Vista de Hoy y de los acordeones. Pausar es el
+   * gesto reversible de "esta semana no puedo", y por eso el objetivo se queda
+   * donde estaba, con su refugio y su racha intactos.
+   *
+   * Tampoco es lo mismo que vaciar `scheduledDays`: eso **borra** la
+   * configuración de días que el usuario tendría que volver a escribir al
+   * regresar. La pausa la conserva.
+   */
+  isPaused: boolean;
   dailyGoalMinutes: number;
   metadata: GoalMetadata;
   /** Orden en la Vista de Hoy. */
@@ -94,7 +108,9 @@ export type DayOutcome =
   /** Día programado que cerró sin lectura suficiente. Ya penalizado. */
   | 'missed'
   /** Día no programado: no penaliza ni rompe la racha. */
-  | 'rest';
+  | 'rest'
+  /** Día programado que cerró sin cumplir, pero con el objetivo en pausa. */
+  | 'paused';
 
 /** Estado de una sesión de cronómetro. */
 export type SessionStatus =
