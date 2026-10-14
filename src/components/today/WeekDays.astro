@@ -1,0 +1,73 @@
+---
+import { WEEKDAY_LABELS, type IsoWeekday } from '@/lib/time';
+
+/**
+ * Mini calendario semanal: las siete iniciales, resaltadas las comprometidas.
+ *
+ * Componente Astro, no React: son siete `<span>` que dependen solo de un dato
+ * del servidor y no reaccionan a nada. Hidratar una isla por tarjeta para pintar
+ * texto estático sería pagar JavaScript por nada.
+ *
+ * **El color no es el único canal.** Los chips van `aria-hidden` y debajo queda
+ * una frase para lectores de pantalla con los días escritos: quien no distingue
+ * el relleno de marca del texto apagado sigue sabiendo qué días son.
+ */
+interface Props {
+  scheduledDays: IsoWeekday[];
+  /** La tarjeta en plano secundario (día libre o en pausa) baja también el chip. */
+  atenuado?: boolean;
+  /** Para la frase accesible: "Lectura: lunes, miércoles y viernes". */
+  label: string;
+}
+
+const { scheduledDays, atenuado = false, label } = Astro.props;
+
+const SEMANA: IsoWeekday[] = [1, 2, 3, 4, 5, 6, 7];
+
+const comprometidos = SEMANA.filter((d) => scheduledDays.includes(d));
+
+/** "lunes, miércoles y viernes" — en español la última va con "y", no con coma. */
+const enTexto =
+  comprometidos.length === 0
+    ? null
+    : new Intl.ListFormat('es', { style: 'long', type: 'conjunction' }).format(
+        comprometidos.map((d) => WEEKDAY_LABELS[d].long),
+      );
+---
+
+<div class="flex items-center gap-1">
+  {
+    SEMANA.map((day) => {
+      const activo = scheduledDays.includes(day);
+      return (
+        <span
+          aria-hidden
+          class:list={[
+            'grid h-6 w-6 place-items-center rounded-full text-xs font-medium',
+            /*
+             * El día suelto NO se apaga por debajo de AA: `text-text-soft` sobre
+             * la tarjeta ya cumple justo, y bajarlo más (el clásico `gray-300`)
+             * lo dejaría ilegible. La diferencia la hace el relleno, no la
+             * pérdida de contraste.
+             *
+             * Y el relleno va en lavado, no sólido: el CTA de abajo sí es
+             * `bg-primary` entero, y dos rellenos de marca en la misma tarjeta
+             * se disputarían la mirada.
+             */
+            activo
+              ? atenuado
+                ? 'bg-border text-text'
+                : 'bg-primary/10 text-primary'
+              : 'text-text-soft',
+          ]}
+        >
+          {WEEKDAY_LABELS[day].short}
+        </span>
+      );
+    })
+  }
+</div>
+
+<p class="sr-only">
+  {enTexto ? `${label}: días comprometidos ${enTexto}.` : `${label}: sin días comprometidos.`}
+</p>

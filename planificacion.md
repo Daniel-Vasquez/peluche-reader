@@ -3881,6 +3881,34 @@ así que el usuario daba un salto de más (`/` → `/login`). Se va directo.
 
 20 comprobaciones en navegador contra una base desechable.
 
+## G.6 Addendum · La semana comprometida en la tarjeta
+
+Las tarjetas de la raíz muestran los siete días con las comprometidas resaltadas,
+en `components/today/WeekDays.astro`.
+
+**Astro, no React.** Son siete `<span>` que dependen de un dato del servidor y no
+reaccionan a nada: hidratar una isla por tarjeta para pintar texto estático sería
+pagar JavaScript por nada. La tarjeta sigue con cero islas.
+
+**Los días apagados NO se apagan por debajo de AA.** El patrón habitual
+(`text-gray-300`) deja el día ilegible. Aquí el día no comprometido se queda en
+`text-text-soft` —medido: **5.83:1** en claro y **6.73:1** en oscuro— y la
+diferencia la hace el **relleno** del día comprometido, no la pérdida de contraste
+del otro.
+
+**El relleno va en lavado, no sólido.** El CTA de la misma tarjeta es
+`bg-primary` entero; un segundo relleno de marca se disputaría la mirada. Los
+chips usan `bg-primary/10 text-primary`, y en una tarjeta secundaria —día libre o
+en pausa— pasan a `bg-border text-text`, que informa sin reclamar atención.
+
+**El color no es el único canal.** Los chips van `aria-hidden` y debajo queda una
+frase `sr-only` con los días escritos («Lectura: días comprometidos lunes, martes
+y miércoles»), construida con `Intl.ListFormat` para que la última vaya con «y».
+
+Va entre el medidor y el CTA: el título dice **qué** objetivo es, el CTA dice
+**qué hacer ahora**, y los días son el contexto que responde a la duda de si hoy
+toca.
+
 ---
 
 # Apéndice A · Resumen del balance

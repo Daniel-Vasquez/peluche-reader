@@ -161,7 +161,7 @@ src/
 │   │   └── __tests__/       48 tests, incluida una prueba de fuzz
 │   └── repos/               profile · sessions · progress · gameState · summary
 ├── components/              ui/ · auth/ · charts/ · icons/
-│                            today/      tarjeta de cada objetivo de hoy
+│                            today/      tarjeta de cada objetivo + semana de días
 │                            progress/   pestañas, panel y archivados
 │                            settings/   acordeón y formulario por objetivo
 │                            goals/      archivar y reactivar un objetivo

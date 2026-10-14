@@ -1,5 +1,6 @@
 ---
 import GoalIcon from '@/components/icons/GoalIcon.astro';
+import WeekDays from '@/components/today/WeekDays.astro';
 import type { TodayGoalView } from '@/lib/today-view';
 
 /**
@@ -119,7 +120,19 @@ const cta = goal.hasOpenSession
     </div>
   </div>
 
-  <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+  {/*
+    El compromiso de la semana, entre el medidor y el CTA.
+
+    Va aquí y no junto al título por jerarquía: el título dice QUÉ objetivo es y
+    el CTA dice QUÉ hacer ahora; los días son contexto de apoyo —cada cuánto me
+    comprometí— y leerlos justo antes del botón responde la pregunta que surge
+    al dudar si entrar hoy.
+  */}
+  <div class="mt-4">
+    <WeekDays scheduledDays={goal.scheduledDays} atenuado={libre} label={goal.label} />
+  </div>
+
+  <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
     <p class="text-sm text-text-soft">
       <span class="tabular-nums">{goal.today.minutes}</span> / {goal.dailyGoalMinutes} min
       <span aria-hidden> · </span>

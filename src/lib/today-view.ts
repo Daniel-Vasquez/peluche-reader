@@ -31,6 +31,14 @@ export interface TodayGoalView {
    */
   isScheduledToday: boolean;
 
+  /**
+   * Los días comprometidos del objetivo, ISO 1..7.
+   *
+   * Van enteros, no solo "¿toca hoy?": la tarjeta pinta la semana completa para
+   * que se vea de un vistazo el compromiso, y no solo el día en curso.
+   */
+  scheduledDays: IsoWeekday[];
+
   /** En pausa: hoy no cuesta perritos aunque esté programado. */
   isPaused: boolean;
 
@@ -92,6 +100,7 @@ export async function buildTodayView(
         context: goalContext(goal.metadata),
         dailyGoalMinutes: goal.dailyGoalMinutes,
         isScheduledToday: goal.scheduledDays.includes(weekday),
+        scheduledDays: goal.scheduledDays,
         isPaused: goal.isPaused === true,
         today: {
           minutes,
