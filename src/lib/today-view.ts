@@ -49,25 +49,7 @@ export interface TodayGoalView {
     completed: boolean;
   };
 
-  /**
-   * El refugio de ESTE objetivo.
-   *
-   * `weekLosses` y `weekStartDogs` son los que cuentan la semana: los perritos
-   * perdidos **no** se pueden deducir de `capacity - dogs`, porque una plaza
-   * vacía puede serlo por una pérdida o porque el aforo acaba de crecer. Y al
-   * revés: un refugio lleno puede haber perdido perritos y haberlos recuperado
-   * leyendo, que es el caso más común.
-   *
-   * `adopted` es acumulado de toda la vida del objetivo, no de la semana.
-   */
-  shelter: {
-    dogs: number;
-    capacity: number;
-    streak: number;
-    adopted: number;
-    weekLosses: number;
-    weekStartDogs: number;
-  };
+  shelter: { dogs: number; capacity: number; streak: number };
 
   /** `true` si la sesión abierta del usuario es de ESTE objetivo. */
   hasOpenSession: boolean;
@@ -127,14 +109,7 @@ export async function buildTodayView(
           // personal: la meta orienta, el umbral es lo que cuenta.
           completed: dogsForMinutes(minutes) > 0,
         },
-        shelter: {
-          dogs: state.dogs,
-          capacity: state.capacity,
-          streak: state.streak,
-          adopted: state.adopted,
-          weekLosses: state.weekLosses,
-          weekStartDogs: state.weekStartDogs,
-        },
+        shelter: { dogs: state.dogs, capacity: state.capacity, streak: state.streak },
         hasOpenSession: openSession?.goalId === goal.goalId,
       };
     }),

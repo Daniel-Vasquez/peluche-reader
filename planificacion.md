@@ -3909,10 +3909,16 @@ Va entre el medidor y el CTA: el título dice **qué** objetivo es, el CTA dice
 **qué hacer ahora**, y los días son el contexto que responde a la duda de si hoy
 toca.
 
-## G.7 Addendum · El refugio, contado en la tarjeta
+## G.7 Addendum · Los tres estados del refugio, en `/sesion/[goalId]`
 
-`components/today/ShelterStrip.astro` pinta tres grupos: las plazas ocupadas, las
-libres y los perritos que se fueron **esta semana**, más los adoptados como cifra.
+`components/Shelter.tsx` pasa de pintar dos estados (plaza ocupada o libre) a
+tres, añadiendo los perritos que se fueron **esta semana**, con leyenda y los
+adoptados destacados.
+
+**Va en la pantalla de sesión, no en las tarjetas del inicio.** Ahí hay sitio para
+contarlo, el cronómetro lo actualiza en vivo por `onShelterUpdate`, y la tarjeta
+del inicio sigue siendo un resumen con un CTA: tres rejillas de iconos por tarjeta
+competirían con él. En el inicio se queda el recuento escueto.
 
 ### La fórmula intuitiva da el resultado equivocado
 
@@ -3925,37 +3931,36 @@ reading  dogs=7  capacity=7  adopted=6  weekStartDogs=7  weekLosses=2
 
 esa resta da **0 perdidos** cuando en realidad se perdieron **2**: el refugio
 volvió a llenarse leyendo. Y al revés, una plaza vacía no prueba una pérdida,
-porque el aforo también crece con las adopciones. Las dos cifras que cuentan la
-semana son las que el motor ya lleva: `weekStartDogs` y `weekLosses`.
+porque el aforo también crece con las adopciones. La cifra buena es `weekLosses`,
+que el motor acota con el tope semanal, y ya venía en `ShelterView`: no hizo falta
+tocar la capa de datos.
 
 ### Los adoptados son una cifra, no iconos
 
 `adopted` es acumulado de toda la vida del objetivo, no de la semana. En los datos
 de demostración, Lectura llega a **236**. Pintar 236 emojis no es una recompensa,
-es una pared. Va como badge con el token `accent`, que el sistema de diseño
-reserva para información.
-
-Las pérdidas se cortan en seis iconos y el resto se resume con un `+N`: el tope
-semanal es el 60 % de los perritos al abrir la semana, así que con un aforo grande
-saldrían doce fantasmas.
+es una pared. Se queda en la lista de cifras, con icono y el token `accent`, que
+el sistema de diseño reserva para información.
 
 ### Por qué no `alert`
 
-La pérdida se apaga con `grayscale` y opacidad, nunca con el token `alert`: el
-sistema de diseño admite **un** elemento de alerta por pantalla y aquí hay tres
-tarjetas. El contraste con el grupo de al lado ya comunica la pérdida, y los
-`title` nativos y la frase `sr-only` la nombran.
+La pérdida se apaga con `grayscale` y opacidad, nunca con `alert`: ese token ya lo
+usa el aviso de penalización que aparece debajo, y el sistema admite **un**
+elemento de alerta por pantalla.
 
-Astro otra vez, no React: son datos del servidor que no cambian sin recargar, y
-los `title` funcionan sin JavaScript. `Shelter.tsx` sí es React, pero porque
-escucha al cronómetro; en la tarjeta no hay cronómetro que escuchar.
+Los perdidos van separados del aforo por un filete vertical, porque no ocupan
+plaza: mezclarlos con la rejilla haría que las cuentas no cuadrasen de un vistazo.
+
+El color y la opacidad nunca son el único canal: hay leyenda con texto y recuento,
+`title` nativo en cada casilla, el `aria-label` de la rejilla con las tres cifras,
+y una lista `sr-only` que describe plaza por plaza.
 
 ### Comprobado
 
-18 aserciones en navegador con tres refugios distintos a la vez (lleno con
-pérdidas, mermado, y con aforo ampliado y 236 adopciones): que los iconos de
-refugio son `dogs`, que refugio + libres = aforo, que los perdidos pintados son
-`weekLosses`, y que las tres tarjetas se pintan de forma independiente.
+16 aserciones en navegador: que las casillas ocupadas son `dogs`, que ocupadas +
+libres = aforo, que los perdidos pintados son `weekLosses`, que la leyenda se
+encoge cuando un estado no aplica, que cada objetivo pinta su propio refugio, y
+que el inicio volvió a su contador escueto conservando la semana de días.
 
 ---
 

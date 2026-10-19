@@ -17,10 +17,21 @@ interface Props {
 }
 
 /**
- * El refugio: una casilla por plaza del aforo, ocupada o vacía.
+ * El refugio: una casilla por plaza del aforo, más los que se fueron.
  *
- * El estado **nunca** se comunica solo por color: la rejilla lleva un
- * `aria-label` con el recuento y una lista oculta describe cada plaza.
+ * Tres estados, y cada uno responde a una pregunta distinta: cuántos tengo
+ * (ocupadas), cuánto me cabe (libres) y qué me ha costado la semana (perdidos).
+ *
+ * **Los perdidos no se deducen restando.** `capacity - dogs` son plazas vacías,
+ * que pueden estarlo por una pérdida o porque el aforo acaba de crecer; y un
+ * refugio lleno puede haber perdido dos y haberlos recuperado leyendo. La cifra
+ * buena es `weekLosses`, que el motor acota con el tope semanal.
+ *
+ * **Los adoptados no son iconos**: `adopted` es acumulado de toda la vida del
+ * objetivo y llega a 236 en los datos de demostración. Va como cifra destacada.
+ *
+ * El estado **nunca** se comunica solo por color: hay leyenda con texto, `title`
+ * en cada casilla, un `aria-label` con el recuento y una lista oculta.
  */
 export default function Shelter({
   shelter: initialShelter,
@@ -51,6 +62,8 @@ export default function Shelter({
   const slots = Array.from({ length: capacity }, (_, i) => i < dogs);
   const lossesLeft = Math.max(0, weeklyLossCap - weekLosses);
 
+  const CASILLA = 'grid h-11 w-11 place-items-center rounded-card border text-xl transition';
+
   return (
     <div>
       <div className="flex items-baseline justify-between gap-4">
@@ -62,8 +75,14 @@ export default function Shelter({
 
       <div
         role="img"
-        aria-label={`Refugio: ${dogs} perritos de ${capacity} plazas.`}
-        className="mt-4 flex flex-wrap gap-2"
+        aria-label={
+          `Refugio: ${dogs} perritos de ${capacity} plazas.` +
+          (weekLosses > 0
+            ? ` ${weekLosses} ${weekLosses === 1 ? 'se fue' : 'se fueron'} esta semana.`
+            : '') +
+          (adopted > 0 ? ` ${adopted} adoptados en total.` : '')
+        }
+        className="mt-4 flex flex-wrap items-center gap-2"
       >
         {slots.map((occupied, i) => {
           const isNew = occupied && i >= dogs - justGained;
@@ -71,9 +90,10 @@ export default function Shelter({
             <span
               key={i}
               aria-hidden
+              title={occupied ? 'En refugio' : 'Plaza libre'}
               style={isNew ? { animationDelay: `${(i - (dogs - justGained)) * 60}ms` } : undefined}
               className={clsx(
-                'grid h-11 w-11 place-items-center rounded-card border text-xl transition',
+                CASILLA,
                 occupied
                   ? 'border-primary/40 bg-primary-soft'
                   : 'border-dashed border-border bg-muted',
@@ -84,12 +104,60 @@ export default function Shelter({
             </span>
           );
         })}
+
+        {/*
+          Los que se fueron esta semana, separados del aforo por un filete: no
+          ocupan plaza, así que mezclarlos con la rejilla haría que las cuentas
+          no cuadrasen a simple vista.
+
+          Se apagan con `grayscale` y opacidad, no con el token `alert`: ese se
+          reserva para el aviso de penalización de más abajo, y el sistema de
+          diseño admite un solo elemento de alerta por pantalla.
+        */}
+        {weekLosses > 0 && (
+          <>
+            <span aria-hidden className="mx-1 w-px self-stretch bg-border" />
+            {Array.from({ length: weekLosses }).map((_, i) => (
+              <span
+                key={`perdido-${i}`}
+                aria-hidden
+                title="Pasó a mejor vida"
+                className={clsx(CASILLA, 'border-border bg-transparent opacity-50 grayscale')}
+              >
+                🐶
+              </span>
+            ))}
+          </>
+        )}
       </div>
+
+      {/* Leyenda: el color y la opacidad no pueden ser el único canal. */}
+      <ul className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-soft">
+        <li className="flex items-center gap-1.5">
+          <span aria-hidden className="h-3 w-3 rounded-[4px] border border-primary/40 bg-primary-soft" />
+          En refugio ({dogs})
+        </li>
+        {capacity > dogs && (
+          <li className="flex items-center gap-1.5">
+            <span aria-hidden className="h-3 w-3 rounded-[4px] border border-dashed border-border bg-muted" />
+            Plaza libre ({capacity - dogs})
+          </li>
+        )}
+        {weekLosses > 0 && (
+          <li className="flex items-center gap-1.5">
+            <span aria-hidden className="h-3 w-3 rounded-[4px] border border-border opacity-50 grayscale" />
+            Se {weekLosses === 1 ? 'fue' : 'fueron'} esta semana ({weekLosses})
+          </li>
+        )}
+      </ul>
 
       {/* Detalle textual para lectores de pantalla: el color no basta. */}
       <ul className="sr-only">
         {slots.map((occupied, i) => (
           <li key={i}>{occupied ? `Plaza ${i + 1}: ocupada` : `Plaza ${i + 1}: vacía`}</li>
+        ))}
+        {Array.from({ length: weekLosses }).map((_, i) => (
+          <li key={`perdido-${i}`}>Perrito {i + 1} que se fue esta semana</li>
         ))}
       </ul>
 
@@ -117,9 +185,18 @@ export default function Shelter({
       )}
 
       <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+        {/*
+          Los adoptados son la recompensa acumulada, no una cifra más: llevan
+          icono y el token `accent`, que el sistema reserva para información.
+        */}
         <div className="flex justify-between gap-2 sm:block">
           <dt className="text-text-soft">Adoptados</dt>
-          <dd className="font-medium tabular-nums">{adopted}</dd>
+          <dd className="font-medium text-accent-text tabular-nums">
+            <span aria-hidden className="mr-1">
+              🏡
+            </span>
+            {adopted}
+          </dd>
         </div>
         <div className="flex justify-between gap-2 sm:block">
           <dt className="text-text-soft">Aforo</dt>
