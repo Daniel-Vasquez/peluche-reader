@@ -134,6 +134,20 @@
 
 /* Entrada de un perrito nuevo en el refugio. Se aplica solo con
    `motion-safe:`, y el bloque de `prefers-reduced-motion` la neutraliza. */
+/*
+ * Loader de navegación: el perrito da saltitos y su sombra se encoge al vuelo.
+ * Las dos animaciones comparten duración para que sombra y salto cuadren.
+ */
+@keyframes dog-hop {
+  0%, 100% { transform: translateY(0)    rotate(-4deg); }
+  50%      { transform: translateY(-28%) rotate(4deg);  }
+}
+
+@keyframes dog-shadow {
+  0%, 100% { transform: scaleX(1);   opacity: 0.3;  }
+  50%      { transform: scaleX(0.55); opacity: 0.12; }
+}
+
 @keyframes shelter-pop {
   from { opacity: 0; transform: scale(0.6); }
   60%  { transform: scale(1.08); }

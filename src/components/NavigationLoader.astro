@@ -33,14 +33,28 @@
   class="fixed inset-0 z-[60] flex items-center justify-center bg-base/90 backdrop-blur-sm"
 >
   {/*
-    Colores por token: `border-border` para el aro y `border-t-text` para el
-    trazo que gira. Ambos se invierten solos con el tema, así que no hace falta
-    ninguna variante `dark:`.
+    Un perrito dando saltitos, no un aro girando: es el personaje de la app y
+    ya aparece en el refugio, en el cronómetro y en las gráficas.
+
+    La sombra es la que vende el salto. Sin ella el emoji parece temblar; con
+    ella se lee como un perrito que trota en el sitio.
+
+    `motion-safe` / `motion-reduce`: con el sistema puesto en reducir
+    movimiento no hay saltos ni desplazamiento, pero el loader **tiene que
+    seguir diciendo que algo ocurre**, así que cae a un latido de opacidad y la
+    sombra se queda quieta.
+
+    Los colores van por token (`bg-text`), que se invierte solo con el tema.
   */}
-  <span
-    aria-hidden="true"
-    class="h-9 w-9 animate-spin rounded-full border-[3px] border-border border-t-text"
-  ></span>
+  <span aria-hidden="true" class="flex flex-col items-center gap-2">
+    <span
+      class="text-5xl leading-none motion-safe:animate-[dog-hop_700ms_ease-in-out_infinite] motion-reduce:animate-pulse"
+      >🐶</span
+    >
+    <span
+      class="h-1.5 w-10 rounded-full bg-text/30 motion-safe:animate-[dog-shadow_700ms_ease-in-out_infinite] motion-reduce:opacity-30"
+    ></span>
+  </span>
   <span class="sr-only">Cargando…</span>
 </div>
 
