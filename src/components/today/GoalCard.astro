@@ -1,5 +1,6 @@
 ---
 import GoalIcon from '@/components/icons/GoalIcon.astro';
+import ShelterStrip from '@/components/today/ShelterStrip.astro';
 import WeekDays from '@/components/today/WeekDays.astro';
 import type { TodayGoalView } from '@/lib/today-view';
 
@@ -132,12 +133,30 @@ const cta = goal.hasOpenSession
     <WeekDays scheduledDays={goal.scheduledDays} atenuado={libre} label={goal.label} />
   </div>
 
+  <div class="mt-3">
+    <ShelterStrip shelter={goal.shelter} atenuado={libre} label={goal.label} />
+  </div>
+
   <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+    {/*
+      El desglose en texto. Los perdidos se dicen "esta semana" a propósito:
+      es el periodo que el motor acota con el tope semanal, y sin esa palabra
+      la cifra parecería un total histórico.
+    */}
     <p class="text-sm text-text-soft">
       <span class="tabular-nums">{goal.today.minutes}</span> / {goal.dailyGoalMinutes} min
       <span aria-hidden> · </span>
-      <span class="tabular-nums">{goal.shelter.dogs}</span> 🐶
-      <span class="sr-only">perritos en el refugio</span>
+      Refugio <span class="tabular-nums">{goal.shelter.dogs}/{goal.shelter.capacity}</span>
+      {
+        goal.shelter.weekLosses > 0 && (
+          <>
+            <span aria-hidden> · </span>
+            <span class="tabular-nums">{goal.shelter.weekLosses}</span> perdido{
+              goal.shelter.weekLosses === 1 ? '' : 's'
+            } esta semana
+          </>
+        )
+      }
     </p>
 
     {/*

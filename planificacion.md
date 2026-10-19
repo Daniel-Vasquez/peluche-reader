@@ -3909,6 +3909,54 @@ Va entre el medidor y el CTA: el título dice **qué** objetivo es, el CTA dice
 **qué hacer ahora**, y los días son el contexto que responde a la duda de si hoy
 toca.
 
+## G.7 Addendum · El refugio, contado en la tarjeta
+
+`components/today/ShelterStrip.astro` pinta tres grupos: las plazas ocupadas, las
+libres y los perritos que se fueron **esta semana**, más los adoptados como cifra.
+
+### La fórmula intuitiva da el resultado equivocado
+
+Es tentador deducir las pérdidas restando: `cuota inicial - perritos vivos`. Con
+los datos reales del dueño de la app:
+
+```
+reading  dogs=7  capacity=7  adopted=6  weekStartDogs=7  weekLosses=2
+```
+
+esa resta da **0 perdidos** cuando en realidad se perdieron **2**: el refugio
+volvió a llenarse leyendo. Y al revés, una plaza vacía no prueba una pérdida,
+porque el aforo también crece con las adopciones. Las dos cifras que cuentan la
+semana son las que el motor ya lleva: `weekStartDogs` y `weekLosses`.
+
+### Los adoptados son una cifra, no iconos
+
+`adopted` es acumulado de toda la vida del objetivo, no de la semana. En los datos
+de demostración, Lectura llega a **236**. Pintar 236 emojis no es una recompensa,
+es una pared. Va como badge con el token `accent`, que el sistema de diseño
+reserva para información.
+
+Las pérdidas se cortan en seis iconos y el resto se resume con un `+N`: el tope
+semanal es el 60 % de los perritos al abrir la semana, así que con un aforo grande
+saldrían doce fantasmas.
+
+### Por qué no `alert`
+
+La pérdida se apaga con `grayscale` y opacidad, nunca con el token `alert`: el
+sistema de diseño admite **un** elemento de alerta por pantalla y aquí hay tres
+tarjetas. El contraste con el grupo de al lado ya comunica la pérdida, y los
+`title` nativos y la frase `sr-only` la nombran.
+
+Astro otra vez, no React: son datos del servidor que no cambian sin recargar, y
+los `title` funcionan sin JavaScript. `Shelter.tsx` sí es React, pero porque
+escucha al cronómetro; en la tarjeta no hay cronómetro que escuchar.
+
+### Comprobado
+
+18 aserciones en navegador con tres refugios distintos a la vez (lleno con
+pérdidas, mermado, y con aforo ampliado y 236 adopciones): que los iconos de
+refugio son `dogs`, que refugio + libres = aforo, que los perdidos pintados son
+`weekLosses`, y que las tres tarjetas se pintan de forma independiente.
+
 ---
 
 # Apéndice A · Resumen del balance

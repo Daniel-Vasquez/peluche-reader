@@ -1,0 +1,120 @@
+---
+import type { TodayGoalView } from '@/lib/today-view';
+
+/**
+ * El refugio de un objetivo, contado en iconos: ocupadas, libres y perdidos.
+ *
+ * Astro y no React: son datos del servidor que no cambian sin recargar, y los
+ * `title` nativos funcionan sin una línea de JavaScript. El `Shelter.tsx` de la
+ * pantalla de sesión sí es React, pero porque escucha al cronómetro; aquí no hay
+ * cronómetro que escuchar.
+ *
+ * ### Por qué estos tres grupos y no otros
+ *
+ * Los perdidos **no** son `capacity - dogs`. Una plaza vacía puede estar vacía
+ * porque se perdió un perrito o porque el aforo acaba de crecer, y un refugio
+ * lleno puede haber perdido dos y haberlos recuperado leyendo. El motor lleva la
+ * cuenta buena en `weekLosses`, acotada por el tope semanal.
+ *
+ * Y los adoptados van como **número, no como iconos**: son acumulados de toda la
+ * vida del objetivo. En los datos de demostración, Lectura llega a 236. Pintar
+ * 236 emojis en una tarjeta no es una recompensa, es una pared.
+ */
+interface Props {
+  shelter: TodayGoalView['shelter'];
+  /** La tarjeta en plano secundario (día libre o en pausa). */
+  atenuado?: boolean;
+  label: string;
+}
+
+const { shelter, atenuado = false, label } = Astro.props;
+const { dogs, capacity, adopted, weekLosses } = shelter;
+
+const libres = Math.max(0, capacity - dogs);
+
+/*
+ * Tope de iconos de pérdida. El tope semanal del motor es el 60 % de los
+ * perritos al abrir la semana, así que con un aforo grande podrían salir doce
+ * fantasmas y ahogar la tarjeta. A partir de seis se resumen en texto.
+ */
+const MAX_FANTASMAS = 6;
+const fantasmas = Math.min(weekLosses, MAX_FANTASMAS);
+const fantasmasDeMas = weekLosses - fantasmas;
+
+const CASILLA = 'grid h-5 w-5 place-items-center rounded-[6px] border text-[11px] leading-none';
+---
+
+<div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+  {/* Grupo 1 y 2: el aforo, plaza a plaza. */}
+  <div class="flex flex-wrap items-center gap-1">
+    {
+      Array.from({ length: dogs }).map(() => (
+        <span
+          aria-hidden
+          title="En refugio"
+          class:list={[
+            CASILLA,
+            atenuado ? 'border-border bg-muted' : 'border-primary/40 bg-primary-soft',
+          ]}
+        >
+          🐶
+        </span>
+      ))
+    }
+    {
+      Array.from({ length: libres }).map(() => (
+        <span aria-hidden title="Plaza libre" class:list={[CASILLA, 'border-dashed border-border bg-transparent']} />
+      ))
+    }
+  </div>
+
+  {/*
+    Grupo 3: los que se fueron esta semana.
+    Apagados con `grayscale` y opacidad, nunca con el token `alert`: el sistema
+    de diseño admite un solo elemento de alerta por pantalla y aquí hay tres
+    tarjetas. La pérdida se lee por el contraste con el grupo de al lado.
+  */}
+  {
+    weekLosses > 0 && (
+      <div class="flex flex-wrap items-center gap-1">
+        {Array.from({ length: fantasmas }).map(() => (
+          <span
+            aria-hidden
+            title="Pasó a mejor vida"
+            class:list={[CASILLA, 'border-border bg-transparent opacity-50 grayscale']}
+          >
+            🐶
+          </span>
+        ))}
+        {fantasmasDeMas > 0 && (
+          <span aria-hidden class="text-xs text-text-soft tabular-nums">+{fantasmasDeMas}</span>
+        )}
+      </div>
+    )
+  }
+
+  {/* Los adoptados: cifra, no iconos. */}
+  {
+    adopted > 0 && (
+      <span
+        aria-hidden
+        title="Adoptado"
+        class:list={[
+          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums',
+          atenuado ? 'bg-muted text-text-soft' : 'bg-accent/10 text-accent-text',
+        ]}
+      >
+        <span>🏡</span>
+        {adopted}
+      </span>
+    )
+  }
+</div>
+
+{/* El color y la opacidad nunca son el único canal. */}
+<p class="sr-only">
+  {label}: {dogs} {dogs === 1 ? 'perrito' : 'perritos'} en el refugio de {capacity}{' '}
+  {capacity === 1 ? 'plaza' : 'plazas'}.
+  {weekLosses > 0 && ` ${weekLosses} ${weekLosses === 1 ? 'perrito se fue' : 'perritos se fueron'} esta semana.`}
+  {adopted > 0 && ` ${adopted} ${adopted === 1 ? 'adoptado' : 'adoptados'} en total.`}
+</p>
