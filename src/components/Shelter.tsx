@@ -27,8 +27,12 @@ interface Props {
  * refugio lleno puede haber perdido dos y haberlos recuperado leyendo. La cifra
  * buena es `weekLosses`, que el motor acota con el tope semanal.
  *
- * **Los adoptados no son iconos**: `adopted` es acumulado de toda la vida del
- * objetivo y llega a 236 en los datos de demostración. Va como cifra destacada.
+ * Los **adoptados** son un cuarto grupo: perritos que desbordaron el aforo y
+ * encontraron casa. Ya no ocupan plaza, así que van aparte y cierran la fila —el
+ * recorrido va de lo que tienes, a lo que perdiste, a lo que diste en adopción—.
+ * `adopted` es acumulado de toda la vida del objetivo y puede crecer sin límite,
+ * por eso se conserva además la cifra en la lista de abajo: con cien iconos, el
+ * número sigue siendo la lectura rápida.
  *
  * El estado **nunca** se comunica solo por color: hay leyenda con texto, `title`
  * en cada casilla, un `aria-label` con el recuento y una lista oculta.
@@ -129,6 +133,34 @@ export default function Shelter({
             ))}
           </>
         )}
+
+        {/*
+          Los adoptados, uno por perrito. El icono es un perrito y no una casa:
+          esta fila es la lista de los perritos, y la casa ya resume el total en
+          las cifras de abajo.
+
+          Fondo propio con el token `accent`: ni el relleno de marca de las
+          plazas ocupadas —no están en el refugio— ni el apagado de los
+          perdidos, porque esto es una recompensa.
+
+          Cierran la fila a propósito: el recorrido va de lo que tienes, a lo que
+          perdiste, a lo que diste en adopción, y termina en lo bueno.
+        */}
+        {adopted > 0 && (
+          <>
+            <span aria-hidden className="mx-1 w-px self-stretch bg-border" />
+            {Array.from({ length: adopted }).map((_, i) => (
+              <span
+                key={`adoptado-${i}`}
+                aria-hidden
+                title="Adoptado"
+                className={clsx(CASILLA, 'border-accent/40 bg-accent/10')}
+              >
+                🐶
+              </span>
+            ))}
+          </>
+        )}
       </div>
 
       {/* Leyenda: el color y la opacidad no pueden ser el único canal. */}
@@ -149,6 +181,12 @@ export default function Shelter({
             Se {weekLosses === 1 ? 'fue' : 'fueron'} esta semana ({weekLosses})
           </li>
         )}
+        {adopted > 0 && (
+          <li className="flex items-center gap-1.5">
+            <span aria-hidden className="h-3 w-3 rounded-[4px] border border-accent/40 bg-accent/10" />
+            {adopted === 1 ? 'Adoptado' : 'Adoptados'} ({adopted})
+          </li>
+        )}
       </ul>
 
       {/* Detalle textual para lectores de pantalla: el color no basta. */}
@@ -158,6 +196,9 @@ export default function Shelter({
         ))}
         {Array.from({ length: weekLosses }).map((_, i) => (
           <li key={`perdido-${i}`}>Perrito {i + 1} que se fue esta semana</li>
+        ))}
+        {Array.from({ length: adopted }).map((_, i) => (
+          <li key={`adoptado-${i}`}>Perrito {i + 1} adoptado</li>
         ))}
       </ul>
 

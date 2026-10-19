@@ -3935,12 +3935,22 @@ porque el aforo también crece con las adopciones. La cifra buena es `weekLosses
 que el motor acota con el tope semanal, y ya venía en `ShelterView`: no hizo falta
 tocar la capa de datos.
 
-### Los adoptados son una cifra, no iconos
+### Los adoptados: un icono por perrito, y además la cifra
 
-`adopted` es acumulado de toda la vida del objetivo, no de la semana. En los datos
-de demostración, Lectura llega a **236**. Pintar 236 emojis no es una recompensa,
-es una pared. Se queda en la lista de cifras, con icono y el token `accent`, que
-el sistema de diseño reserva para información.
+Son el cuarto grupo y cierran la fila, porque el recorrido va de lo que tienes, a
+lo que perdiste, a lo que diste en adopción, y conviene terminar en lo bueno.
+Fondo propio con el token `accent`: ni el relleno de marca de las plazas ocupadas
+—no están en el refugio— ni el apagado de los perdidos, porque esto es una
+recompensa.
+
+**El icono es un perrito, no una casa.** La fila es la lista de los perritos; la
+casa resume el total en las cifras de abajo, y esa cifra se conserva: `adopted` es
+acumulado de toda la vida del objetivo y puede crecer sin límite, así que con
+muchos iconos el número sigue siendo la lectura rápida.
+
+⚠️ **No hay tope de iconos**, por decisión expresa del dueño. Con los 236 de los
+datos de demostración la rejilla mide **980 px de alto**. Con las cifras reales
+—6 adopciones— ocupa dos filas.
 
 ### Por qué no `alert`
 
@@ -3957,10 +3967,11 @@ y una lista `sr-only` que describe plaza por plaza.
 
 ### Comprobado
 
-16 aserciones en navegador: que las casillas ocupadas son `dogs`, que ocupadas +
-libres = aforo, que los perdidos pintados son `weekLosses`, que la leyenda se
-encoge cuando un estado no aplica, que cada objetivo pinta su propio refugio, y
-que el inicio volvió a su contador escueto conservando la semana de días.
+En navegador, en los dos temas: que las casillas ocupadas son `dogs`, que ocupadas
++ libres = aforo, que los perdidos pintados son `weekLosses`, que hay un icono por
+adoptado y que su fondo difiere de los otros dos grupos, que la leyenda se encoge
+cuando un estado no aplica, que cada objetivo pinta su propio refugio, y que el
+inicio conserva su contador escueto y su semana de días.
 
 ---
 
