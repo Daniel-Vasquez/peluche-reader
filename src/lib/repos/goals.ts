@@ -27,7 +27,9 @@ export const DEFAULT_GOALS: {
     type: 'english',
     label: 'Inglés',
     scheduledDays: [],
-    dailyGoalMinutes: 20,
+    // 30 es el umbral de su curva: una meta por debajo diría al usuario que 20
+    // minutos bastan el mismo día en que 20 minutos le cuestan un perrito.
+    dailyGoalMinutes: 30,
     metadata: { type: 'english', courseName: null, level: null },
   },
   {
@@ -35,7 +37,7 @@ export const DEFAULT_GOALS: {
     type: 'study',
     label: 'Estudio',
     scheduledDays: [],
-    dailyGoalMinutes: 25,
+    dailyGoalMinutes: 30,
     metadata: { type: 'study', subject: null, topic: null },
   },
 ];

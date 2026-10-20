@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import Button from '@/components/ui/Button';
 import type { SettleResult } from '@/lib/game/service';
-import { REWARD_STEPS } from '@/lib/game/rewards';
+import type { RewardCurve } from '@/lib/game/rewards';
 import { emitShelterUpdate } from '@/lib/shelter-events';
 import type { SessionView } from '@/lib/sessions-view';
 import { formatDuration } from '@/lib/time';
@@ -22,6 +22,14 @@ interface Props {
   /** Libro, curso o tema: el metadato del objetivo, ya resuelto por el servidor. */
   contextLabel: string | null;
   dailyGoalMinutes: number;
+  /**
+   * Escalones de recompensa de ESTE objetivo, ya resueltos por el servidor.
+   *
+   * Llegan por props y no se calculan aquí porque la curva depende del tipo
+   * —10 minutos en Lectura, 30 en Inglés y Estudio— y el balance vive en
+   * `game/config.ts`, no en un componente.
+   */
+  rewardSteps: readonly { minutes: number; dogs: number }[];
   minSessionSeconds: number;
   /** Segundos ya completados hoy en sesiones anteriores. */
   initialDaySeconds: number;
@@ -43,6 +51,7 @@ export default function SessionTimer({
   activity,
   contextLabel: _contextLabel,
   dailyGoalMinutes,
+  rewardSteps,
   minSessionSeconds,
   initialDaySeconds,
 }: Props) {
@@ -234,7 +243,7 @@ export default function SessionTimer({
       </div>
 
       <ol className="mt-6 flex flex-wrap justify-center gap-2" aria-label="Escalones de recompensa">
-        {REWARD_STEPS.map((step) => {
+        {rewardSteps.map((step) => {
           const reached = minutesNow >= step.minutes;
           return (
             <li

@@ -9,12 +9,12 @@ import {
   type GameState,
 } from '@/lib/game/engine';
 import { weeklyLossCap } from '@/lib/game/penalties';
-import { vocabularyFor } from '@/lib/game/vocabulary';
-import { dogsForMinutes } from '@/lib/game/rewards';
+import { policyFor } from '@/lib/game/policy';
+
 import { addDays, type IsoWeekday } from '@/lib/time';
 
 /** Vocabulario de prueba: el motor no debe depender de cuál sea. */
-const VOCAB = vocabularyFor('reading');
+const POL = policyFor('reading');
 
 /**
  * Prueba de fuerza bruta: miles de secuencias aleatorias de acciones sobre el
@@ -83,10 +83,10 @@ describe('invariantes bajo secuencias aleatorias', () => {
             minutesToday: minutes,
             alreadyAwarded: awardedToday,
           };
-          awardedToday = Math.max(awardedToday, dogsForMinutes(minutes));
+          awardedToday = Math.max(awardedToday, POL.rewards.dogsForMinutes(minutes));
         }
 
-        const result = applyAction(s, action, VOCAB);
+        const result = applyAction(s, action, POL);
         s = result.state;
         checkInvariants(s, `semilla ${seed}, paso ${step}, acción ${action.kind}`);
 
@@ -117,14 +117,14 @@ describe('invariantes bajo secuencias aleatorias', () => {
       }
 
       let s = { ...initialState('2026-W01', inicio), lastReconciledDay: inicio };
-      const first = reconcile(s, hoy, horario, leyo, VOCAB);
+      const first = reconcile(s, hoy, horario, leyo, POL);
       checkInvariants(first.state, `semilla ${seed}, hueco de ${huecoDias} días`);
 
       // Nunca juzga hoy.
       expect(first.state.lastReconciledDay < hoy).toBe(true);
 
       // Idempotente: repetir no cambia nada ni emite eventos.
-      const second = reconcile(first.state, hoy, horario, leyo, VOCAB);
+      const second = reconcile(first.state, hoy, horario, leyo, POL);
       expect(second.events).toEqual([]);
       expect(second.state).toEqual(first.state);
     }

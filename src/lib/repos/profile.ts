@@ -2,10 +2,21 @@ import type { WithId } from 'mongodb';
 import { col } from '@/lib/db/collections';
 import type { ProfileDoc } from '@/lib/db/types';
 import { readEnvOr } from '@/lib/env';
+import type { GoalType } from '@/lib/db/types';
+import { rewardCurveFor } from '@/lib/game/rewards';
 import { isValidTimezone } from '@/lib/time';
 
-/** Metas ofrecidas en la interfaz. Coinciden con los escalones de recompensa. */
-export const GOAL_OPTIONS = [10, 15, 20, 25, 30] as const;
+/**
+ * Metas ofrecidas en la interfaz, **por tipo de objetivo**.
+ *
+ * Se derivan de los escalones de la curva en vez de escribirse a mano. El
+ * comentario de antes ya decía que coincidían con ellos, pero eran una lista
+ * suelta: al separarse las curvas por tipo, esa lista habría ofrecido 20 minutos
+ * como meta de Inglés, que es justo la cifra que ahora cuesta un perrito.
+ */
+export function goalOptionsFor(type: GoalType): readonly number[] {
+  return rewardCurveFor(type).steps.map((s) => s.minutes);
+}
 
 /** Zona horaria por defecto cuando el cliente no informa la suya. */
 export function defaultTimezone(): string {

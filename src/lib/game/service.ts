@@ -3,9 +3,9 @@ import { col } from '@/lib/db/collections';
 import type { GoalDoc, GoalRef, SessionDoc } from '@/lib/db/types';
 import { GAME } from '@/lib/game/config';
 import { applyAction, reconcile, type GameState } from '@/lib/game/engine';
+import type { RewardCurve } from '@/lib/game/rewards';
 import { weeklyLossCap } from '@/lib/game/penalties';
-import { dogsForMinutes, nextRewardStep } from '@/lib/game/rewards';
-import { vocabularyFor } from '@/lib/game/vocabulary';
+import { policyFor } from '@/lib/game/policy';
 import {
   appendEvents,
   ensureGameState,
@@ -72,7 +72,7 @@ export interface SettleResult {
   adoptedGained: number;
   minutesToday: number;
   shelter: ShelterView;
-  nextStep: ReturnType<typeof nextRewardStep>;
+  nextStep: ReturnType<RewardCurve['nextStep']>;
   /** `false` cuando la sesión quedó por debajo del mínimo. */
   counted: boolean;
 }
@@ -110,15 +110,16 @@ async function reconcileAndPersist(
 
   // Los días comprometidos son los del OBJETIVO, no los del perfil: fallar
   // inglés no puede depender del calendario de lectura.
-  // El vocabulario sale del TIPO del objetivo: un día fallado de inglés no puede
-  // registrarse como "Día programado sin leer".
+  // La política sale del TIPO: con ella viajan el vocabulario —un día fallado de
+  // inglés no puede registrarse como "Día programado sin leer"— y la curva, que
+  // es la que decide cuántos minutos salvan el día.
   // La pausa es del OBJETIVO: pausar inglés no puede dejar de penalizar lectura.
   const result = reconcile(
     state,
     todayKey,
     goal.scheduledDays,
     completedDays,
-    vocabularyFor(goal.type),
+    policyFor(goal.type),
     goal.isPaused === true,
   );
 
@@ -232,6 +233,9 @@ export async function settleSession(
   const todayKey = dayKey(now, profile.timezone);
   const sessions = await col.sessions();
 
+  // La curva del TIPO: 10 minutos salvan un día de lectura, 30 uno de inglés.
+  const curva = policyFor(goal.type).rewards;
+
   const stateDoc = await ensureGameState(ref, weekKeyFromDayKey(todayKey), todayKey);
   let state = (await reconcileAndPersist(ref, goal, toGameState(stateDoc), todayKey)).state;
 
@@ -240,7 +244,7 @@ export async function settleSession(
     adoptedGained: 0,
     minutesToday: minutes,
     shelter: toShelterView(state),
-    nextStep: nextRewardStep(minutes),
+    nextStep: curva.nextStep(minutes),
     counted: false,
   });
 
@@ -276,13 +280,13 @@ export async function settleSession(
       minutesToday,
       alreadyAwarded: dayProgress.dogsAwarded,
     },
-    vocabularyFor(goal.type),
+    policyFor(goal.type),
   );
   state = result.state;
 
   await saveGameState(ref, state);
   await appendEvents(ref, result.events);
-  await setDogsAwarded(ref, session.dayKey, dogsForMinutes(minutesToday));
+  await setDogsAwarded(ref, session.dayKey, curva.dogsForMinutes(minutesToday));
   await sessions.updateOne(
     { _id: new ObjectId(session._id) },
     { $set: { settledAt: now, updatedAt: now } },
@@ -296,7 +300,7 @@ export async function settleSession(
     adoptedGained: adoption?.delta ?? 0,
     minutesToday,
     shelter: toShelterView(state),
-    nextStep: nextRewardStep(minutesToday),
+    nextStep: curva.nextStep(minutesToday),
     counted: true,
   };
 }

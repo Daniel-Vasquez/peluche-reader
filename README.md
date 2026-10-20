@@ -21,29 +21,47 @@ sitio, es un error.
 ### Recompensa
 
 Se calcula sobre los **minutos del día**, no por sesión: tres sesiones de 7
-minutos no valen 0. Los primeros 10 minutos dan 1 perrito, y cada bloque extra de
-5 minutos vale **uno más que el bloque anterior**.
+minutos no valen 0. **Cada tipo de objetivo tiene su curva**, porque no piden el
+mismo esfuerzo.
+
+**Lectura** — umbral 10 min, bloques de 5, ascendente:
 
 | Minutos en el día | 10 | 15 | 20 | 25 | 30 o más |
 |---|---:|---:|---:|---:|---:|
 | **Perritos** | 1 | 2 | 4 | 7 | 11 |
 | Gana el bloque | +1 | +1 | +2 | +3 | +4 |
 
-A partir de 30 minutos la recompensa no crece. Si el refugio está lleno, los
-perritos extra pasan a **adoptados** (marcador histórico) y cada 10 adopciones
-amplían el aforo en 1, hasta 21.
+Diez minutos son un hábito que hay que arrancar, así que la curva paga el "un
+bloque más". A partir de 30 minutos no crece.
+
+**Inglés y Estudio** — umbral 30 min, bloques de 15, lineal y sin tope:
+
+| Minutos en el día | 29 | 30 | 45 | 60 | 75 | 90 |
+|---|---:|---:|---:|---:|---:|---:|
+| **Perritos** | 0 | 1 | 2 | 3 | 4 | 5 |
+
+Media hora ya es una sesión seria: aquí la dificultad está en llegar al umbral,
+no en estirarlo.
+
+Si el refugio está lleno, los perritos extra pasan a **adoptados** (marcador
+histórico) y cada 10 adopciones amplían el aforo en 1, hasta 21.
 
 ### Penalización
 
-Cada día comprometido sin leer cuesta 1 perrito, con **dos frenos deliberados**:
+El umbral de cada curva es **también su mínimo de supervivencia**: un día
+comprometido que cierra sin ganar perritos cuesta 1. Son el mismo número a
+propósito, para que no puedan contradecirse — con 29 minutos de inglés se pierde
+un perrito y con 30 no.
+
+Hay **dos frenos deliberados**:
 
 - **Tope semanal**: como máximo se pierde el 60 % de los perritos que había al
   abrir la semana. Empezando con 7 → `ceil(7 × 0.6) = 5`, así que fallar los siete
   días deja el refugio en **2**, no en 0.
 - **Piso absoluto de 1**: Peluche nunca muere. Es el punto desde el que siempre se
-  puede remontar, porque 10 minutos bastan para +1.
+  puede remontar, porque el umbral de cada objetivo basta para +1.
 
-Una sola sesión de 20 minutos repone cuatro días fallados.
+Una sola sesión de 20 minutos de lectura repone cuatro días fallados.
 
 ### Cuándo se cobran las penalizaciones
 

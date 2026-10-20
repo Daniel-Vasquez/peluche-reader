@@ -8,11 +8,11 @@ import {
   type GameState,
 } from '@/lib/game/engine';
 import { weeklyLossCap } from '@/lib/game/penalties';
-import { vocabularyFor } from '@/lib/game/vocabulary';
+import { policyFor } from '@/lib/game/policy';
 import type { IsoWeekday } from '@/lib/time';
 
 /** Vocabulario de prueba: el motor no debe depender de cuál sea. */
-const VOCAB = vocabularyFor('reading');
+const POL = policyFor('reading');
 
 /** Invariantes que deben cumplirse SIEMPRE, hagas lo que hagas. */
 function expectInvariants(s: GameState) {
@@ -53,7 +53,7 @@ describe('initialState', () => {
   it('no penaliza el día de alta', () => {
     const s = initialState('2026-W39', '2026-09-24');
     expect(s.lastReconciledDay).toBe('2026-09-24');
-    const { state, events } = reconcile(s, '2026-09-24', WEEKDAYS, new Set(), VOCAB);
+    const { state, events } = reconcile(s, '2026-09-24', WEEKDAYS, new Set(), POL);
     expect(events).toEqual([]);
     expect(state).toEqual(s);
   });
@@ -63,8 +63,8 @@ describe('es puro: no muta el estado que recibe', () => {
   it('applyAction devuelve un objeto nuevo', () => {
     const s = initialState('2026-W39', '2026-09-23');
     const snapshot = structuredClone(s);
-    applyAction(s, { kind: 'miss', dayKey: '2026-09-23' }, VOCAB);
-    applyAction(s, { kind: 'settle', dayKey: '2026-09-23', minutesToday: 30, alreadyAwarded: 0 }, VOCAB);
+    applyAction(s, { kind: 'miss', dayKey: '2026-09-23' }, POL);
+    applyAction(s, { kind: 'settle', dayKey: '2026-09-23', minutesToday: 30, alreadyAwarded: 0 }, POL);
     expect(s).toEqual(snapshot);
   });
 });
@@ -75,14 +75,14 @@ describe('settle: recompensa idempotente', () => {
 
     const first = applyAction(base, {
       kind: 'settle', dayKey: '2026-09-24', minutesToday: 20, alreadyAwarded: 0,
-    }, VOCAB);
+    }, POL);
     expect(first.state.dogs).toBe(7); // 3 + 4
     expect(first.events.filter((e) => e.type === 'reward')).toHaveLength(1);
 
     // Segunda liquidación del MISMO día: ya se otorgaron 4.
     const second = applyAction(first.state, {
       kind: 'settle', dayKey: '2026-09-24', minutesToday: 20, alreadyAwarded: 4,
-    }, VOCAB);
+    }, POL);
     expect(second.state.dogs).toBe(7);
     expect(second.events).toEqual([]);
     expectInvariants(second.state);
@@ -93,12 +93,12 @@ describe('settle: recompensa idempotente', () => {
     // Primera sesión: 10 min → 1 perrito.
     const a = applyAction(base, {
       kind: 'settle', dayKey: '2026-09-24', minutesToday: 10, alreadyAwarded: 0,
-    }, VOCAB);
+    }, POL);
     expect(a.state.dogs).toBe(2);
     // Sigue hasta 20 min en total → total 4, ya tenía 1, así que +3 (no +4).
     const b = applyAction(a.state, {
       kind: 'settle', dayKey: '2026-09-24', minutesToday: 20, alreadyAwarded: 1,
-    }, VOCAB);
+    }, POL);
     expect(b.events[0]?.delta).toBe(3);
     expect(b.state.dogs).toBe(5);
   });
@@ -107,7 +107,7 @@ describe('settle: recompensa idempotente', () => {
     const base = initialState('2026-W39', '2026-09-23');
     const r = applyAction(base, {
       kind: 'settle', dayKey: '2026-09-24', minutesToday: 8, alreadyAwarded: 0,
-    }, VOCAB);
+    }, POL);
     expect(r.events).toEqual([]);
     expect(r.state.dogs).toBe(base.dogs);
   });
@@ -118,7 +118,7 @@ describe('settle: desborde del aforo', () => {
     const full = { ...initialState('2026-W39', '2026-09-23'), dogs: 7, capacity: 7 };
     const r = applyAction(full, {
       kind: 'settle', dayKey: '2026-09-24', minutesToday: 30, alreadyAwarded: 0,
-    }, VOCAB);
+    }, POL);
     expect(r.state.dogs).toBe(7);      // el refugio no crece de golpe
     expect(r.state.adopted).toBe(11);  // los 11 ganados encontraron casa
     expect(r.state.capacity).toBe(8);  // +1 por las 10 primeras adopciones
@@ -131,7 +131,7 @@ describe('settle: desborde del aforo', () => {
     const before = s.dogs + s.adopted;
     s = applyAction(s, {
       kind: 'settle', dayKey: '2026-09-24', minutesToday: 30, alreadyAwarded: 0,
-    }, VOCAB).state;
+    }, POL).state;
     expect(s.dogs + s.adopted).toBe(before + 11);
   });
 });
@@ -139,7 +139,7 @@ describe('settle: desborde del aforo', () => {
 describe('miss y rollover', () => {
   it('un día fallado cuesta un perrito y rompe la racha', () => {
     const s: GameState = { ...initialState('2026-W39', '2026-09-22'), streak: 4, bestStreak: 4 };
-    const r = applyAction(s, { kind: 'miss', dayKey: '2026-09-23' }, VOCAB);
+    const r = applyAction(s, { kind: 'miss', dayKey: '2026-09-23' }, POL);
     expect(r.state.dogs).toBe(6);
     expect(r.state.weekLosses).toBe(1);
     expect(r.state.streak).toBe(0);
@@ -151,7 +151,7 @@ describe('miss y rollover', () => {
     const s: GameState = {
       ...initialState('2026-W39', '2026-09-27'), dogs: 4, weekLosses: 5, weekStartDogs: 7,
     };
-    const r = applyAction(s, { kind: 'rollover', weekKey: '2026-W40', dayKey: '2026-09-28' }, VOCAB);
+    const r = applyAction(s, { kind: 'rollover', weekKey: '2026-W40', dayKey: '2026-09-28' }, POL);
     expect(r.state.weekKey).toBe('2026-W40');
     expect(r.state.weekStartDogs).toBe(4);
     expect(r.state.weekLosses).toBe(0);
@@ -161,7 +161,7 @@ describe('miss y rollover', () => {
 
   it('un día de descanso no penaliza ni rompe la racha', () => {
     const s: GameState = { ...initialState('2026-W39', '2026-09-25'), streak: 3, bestStreak: 3 };
-    const r = applyAction(s, { kind: 'rest', dayKey: '2026-09-26' }, VOCAB);
+    const r = applyAction(s, { kind: 'rest', dayKey: '2026-09-26' }, POL);
     expect(r.state.dogs).toBe(s.dogs);
     expect(r.state.streak).toBe(3);
     expect(r.events).toEqual([]);
@@ -171,7 +171,7 @@ describe('miss y rollover', () => {
 describe('reconcile', () => {
   it('nunca juzga el día en curso', () => {
     const s = { ...initialState('2026-W39', '2026-09-22'), lastReconciledDay: '2026-09-22' };
-    const r = reconcile(s, '2026-09-24', WEEKDAYS, new Set(), VOCAB);
+    const r = reconcile(s, '2026-09-24', WEEKDAYS, new Set(), POL);
     // Evalúa el 23 (miércoles, programado, sin leer) pero NO el 24.
     expect(r.state.lastReconciledDay).toBe('2026-09-23');
     expect(r.events.filter((e) => e.type === 'penalty')).toHaveLength(1);
@@ -179,10 +179,10 @@ describe('reconcile', () => {
 
   it('es idempotente: repetirla no produce eventos nuevos', () => {
     const s = { ...initialState('2026-W39', '2026-09-20'), lastReconciledDay: '2026-09-20' };
-    const first = reconcile(s, '2026-09-25', WEEKDAYS, new Set(), VOCAB);
+    const first = reconcile(s, '2026-09-25', WEEKDAYS, new Set(), POL);
     expect(first.events.length).toBeGreaterThan(0);
 
-    const second = reconcile(first.state, '2026-09-25', WEEKDAYS, new Set(), VOCAB);
+    const second = reconcile(first.state, '2026-09-25', WEEKDAYS, new Set(), POL);
     expect(second.events).toEqual([]);
     expect(second.state).toEqual(first.state);
   });
@@ -191,7 +191,7 @@ describe('reconcile', () => {
     const soloLunes: IsoWeekday[] = [1];
     const s = { ...initialState('2026-W39', '2026-09-21'), lastReconciledDay: '2026-09-21' };
     // 22 (mar) a 27 (dom): ninguno es lunes, así que ninguno penaliza.
-    const r = reconcile(s, '2026-09-28', soloLunes, new Set(), VOCAB);
+    const r = reconcile(s, '2026-09-28', soloLunes, new Set(), POL);
     expect(r.events.filter((e) => e.type === 'penalty')).toHaveLength(0);
     expect(r.state.dogs).toBe(7);
   });
@@ -199,12 +199,12 @@ describe('reconcile', () => {
   it('cuenta la racha y conserva el récord', () => {
     const s = { ...initialState('2026-W39', '2026-09-20'), lastReconciledDay: '2026-09-20' };
     const leyo = new Set(['2026-09-21', '2026-09-22', '2026-09-23']);
-    const r = reconcile(s, '2026-09-24', WEEKDAYS, leyo, VOCAB);
+    const r = reconcile(s, '2026-09-24', WEEKDAYS, leyo, POL);
     expect(r.state.streak).toBe(3);
     expect(r.state.bestStreak).toBe(3);
 
     // El 24 falla: la racha se rompe pero el récord queda.
-    const r2 = reconcile(r.state, '2026-09-25', WEEKDAYS, leyo, VOCAB);
+    const r2 = reconcile(r.state, '2026-09-25', WEEKDAYS, leyo, POL);
     expect(r2.state.streak).toBe(0);
     expect(r2.state.bestStreak).toBe(3);
   });
@@ -212,7 +212,7 @@ describe('reconcile', () => {
   it('cruza el cambio de semana y reinicia el tope de pérdida', () => {
     // 2026-09-25 es viernes (W39); 2026-09-28, lunes (W40).
     const s = { ...initialState('2026-W39', '2026-09-24'), lastReconciledDay: '2026-09-24' };
-    const r = reconcile(s, '2026-10-01', WEEKDAYS, new Set(), VOCAB);
+    const r = reconcile(s, '2026-10-01', WEEKDAYS, new Set(), POL);
     expect(r.events.filter((e) => e.type === 'week_rollover')).toHaveLength(1);
     expect(r.state.weekKey).toBe('2026-W40');
     expectInvariants(r.state);
@@ -220,7 +220,7 @@ describe('reconcile', () => {
 
   it('un mes entero sin entrar mantiene los invariantes y no vacía el refugio', () => {
     const s = { ...initialState('2026-W36', '2026-08-31'), lastReconciledDay: '2026-08-31' };
-    const r = reconcile(s, '2026-10-01', WEEKDAYS, new Set(), VOCAB);
+    const r = reconcile(s, '2026-10-01', WEEKDAYS, new Set(), POL);
     expect(r.state.dogs).toBeGreaterThanOrEqual(GAME.FLOOR_DOGS);
     expect(r.state.lastReconciledDay).toBe('2026-09-30');
     expectInvariants(r.state);
@@ -235,8 +235,8 @@ describe('reconcile con el objetivo en pausa', () => {
   });
 
   it('una semana programada sin cumplir no cuesta ni un perrito', () => {
-    const activo = reconcile(base(), '2026-09-26', WEEKDAYS, new Set(), VOCAB, false);
-    const pausado = reconcile(base(), '2026-09-26', WEEKDAYS, new Set(), VOCAB, true);
+    const activo = reconcile(base(), '2026-09-26', WEEKDAYS, new Set(), POL, false);
+    const pausado = reconcile(base(), '2026-09-26', WEEKDAYS, new Set(), POL, true);
 
     expect(activo.state.dogs).toBeLessThan(7);
     expect(pausado.state.dogs).toBe(7);
@@ -246,24 +246,24 @@ describe('reconcile con el objetivo en pausa', () => {
 
   it('no rompe la racha', () => {
     const conRacha = { ...base(), streak: 5, bestStreak: 9 };
-    const r = reconcile(conRacha, '2026-09-26', WEEKDAYS, new Set(), VOCAB, true);
+    const r = reconcile(conRacha, '2026-09-26', WEEKDAYS, new Set(), POL, true);
     expect(r.state.streak).toBe(5);
     expect(r.state.bestStreak).toBe(9);
   });
 
   it('avanza lastReconciledDay igual, así no se acumula deuda', () => {
-    const r = reconcile(base(), '2026-09-26', WEEKDAYS, new Set(), VOCAB, true);
+    const r = reconcile(base(), '2026-09-26', WEEKDAYS, new Set(), POL, true);
     expect(r.state.lastReconciledDay).toBe('2026-09-25');
 
     // Y al reanudar, esos días ya están cerrados: no se cobran hacia atrás.
-    const trasReanudar = reconcile(r.state, '2026-09-26', WEEKDAYS, new Set(), VOCAB, false);
+    const trasReanudar = reconcile(r.state, '2026-09-26', WEEKDAYS, new Set(), POL, false);
     expect(trasReanudar.events.filter((e) => e.type === 'penalty')).toHaveLength(0);
     expect(trasReanudar.state.dogs).toBe(7);
   });
 
   it('distingue en el historial un día pausado de uno libre', () => {
     // Del 21 (lun) al 27 (dom): cinco días programados y dos de descanso.
-    const r = reconcile(base(), '2026-09-28', WEEKDAYS, new Set(), VOCAB, true);
+    const r = reconcile(base(), '2026-09-28', WEEKDAYS, new Set(), POL, true);
     const pausados = r.days.filter((d) => d.outcome === 'paused');
     const libres = r.days.filter((d) => d.outcome === 'rest');
 
@@ -274,21 +274,21 @@ describe('reconcile con el objetivo en pausa', () => {
 
   it('lo que sí se practica sigue contando', () => {
     const leyo = new Set(['2026-09-21', '2026-09-22']);
-    const r = reconcile(base(), '2026-09-23', WEEKDAYS, new Set(leyo), VOCAB, true);
+    const r = reconcile(base(), '2026-09-23', WEEKDAYS, new Set(leyo), POL, true);
     expect(r.state.streak).toBe(2);
     expect(r.days.filter((d) => d.outcome === 'completed')).toHaveLength(2);
   });
 
   it('sigue siendo idempotente', () => {
-    const first = reconcile(base(), '2026-09-26', WEEKDAYS, new Set(), VOCAB, true);
-    const second = reconcile(first.state, '2026-09-26', WEEKDAYS, new Set(), VOCAB, true);
+    const first = reconcile(base(), '2026-09-26', WEEKDAYS, new Set(), POL, true);
+    const second = reconcile(first.state, '2026-09-26', WEEKDAYS, new Set(), POL, true);
     expect(second.events).toEqual([]);
     expect(second.state).toEqual(first.state);
   });
 
   it('un mes entero en pausa deja el refugio intacto', () => {
     const s = { ...initialState('2026-W36', '2026-08-31'), lastReconciledDay: '2026-08-31' };
-    const r = reconcile(s, '2026-10-01', WEEKDAYS, new Set(), VOCAB, true);
+    const r = reconcile(s, '2026-10-01', WEEKDAYS, new Set(), POL, true);
     expect(r.state.dogs).toBe(7);
     expect(r.state.weekLosses).toBe(0);
     expect(r.state.lastReconciledDay).toBe('2026-09-30');
@@ -301,13 +301,13 @@ describe('escenario narrativo del Apéndice B', () => {
     // Lunes 2026-09-21, compromiso L–V, refugio inicial de 7.
     let s = initialState('2026-W39', '2026-09-20');
     const settle = (dayKey: string, minutes: number, already = 0) => {
-      const r = applyAction(s, { kind: 'settle', dayKey, minutesToday: minutes, alreadyAwarded: already }, VOCAB);
+      const r = applyAction(s, { kind: 'settle', dayKey, minutesToday: minutes, alreadyAwarded: already }, POL);
       s = r.state;
       expectInvariants(s);
       return r;
     };
     const miss = (dayKey: string) => {
-      const r = applyAction(s, { kind: 'miss', dayKey }, VOCAB);
+      const r = applyAction(s, { kind: 'miss', dayKey }, POL);
       s = r.state;
       expectInvariants(s);
       return r;
@@ -328,14 +328,14 @@ describe('escenario narrativo del Apéndice B', () => {
     settle('2026-09-25', 26);            // viernes: 26 min → +7, remonta dos días
     expect([s.dogs, s.adopted]).toEqual([7, 8]);
 
-    applyAction(s, { kind: 'rest', dayKey: '2026-09-26' }, VOCAB); // sábado libre
+    applyAction(s, { kind: 'rest', dayKey: '2026-09-26' }, POL); // sábado libre
     expect(s.dogs).toBe(7);
 
     const domingo = settle('2026-09-27', 8); // domingo: 8 min, bajo el umbral
     expect(domingo.events).toEqual([]);
 
     // Cierre de semana el lunes siguiente.
-    const rolled = applyAction(s, { kind: 'rollover', weekKey: '2026-W40', dayKey: '2026-09-28' }, VOCAB);
+    const rolled = applyAction(s, { kind: 'rollover', weekKey: '2026-W40', dayKey: '2026-09-28' }, POL);
     expect(rolled.state.weekStartDogs).toBe(7);
     expect(rolled.state.weekLosses).toBe(0);
     expect(rolled.state.adopted).toBe(8);
@@ -348,7 +348,7 @@ describe('reconcile informa del resultado de cada día', () => {
     // 2026-09-21 lunes … 2026-09-27 domingo. Compromiso L–V.
     const s = { ...initialState('2026-W39', '2026-09-20'), lastReconciledDay: '2026-09-20' };
     const leyo = new Set(['2026-09-21', '2026-09-25']);
-    const r = reconcile(s, '2026-09-28', WEEKDAYS, leyo, VOCAB);
+    const r = reconcile(s, '2026-09-28', WEEKDAYS, leyo, POL);
 
     expect(r.days).toEqual([
       { dayKey: '2026-09-21', outcome: 'completed' }, // lunes, leyó
@@ -363,7 +363,7 @@ describe('reconcile informa del resultado de cada día', () => {
 
   it('un día `missed` sin penalización (tope alcanzado) sigue siendo `missed`', () => {
     const s = { ...initialState('2026-W39', '2026-09-20'), lastReconciledDay: '2026-09-20' };
-    const r = reconcile(s, '2026-09-28', [1, 2, 3, 4, 5, 6, 7], new Set(), VOCAB);
+    const r = reconcile(s, '2026-09-28', [1, 2, 3, 4, 5, 6, 7], new Set(), POL);
     const missed = r.days.filter((d) => d.outcome === 'missed');
     const penalties = r.events.filter((e) => e.type === 'penalty');
     expect(missed).toHaveLength(7);
@@ -373,21 +373,22 @@ describe('reconcile informa del resultado de cada día', () => {
 
   it('no devuelve ningún día cuando no hay nada que reconciliar', () => {
     const s = { ...initialState('2026-W39', '2026-09-24'), lastReconciledDay: '2026-09-24' };
-    expect(reconcile(s, '2026-09-24', WEEKDAYS, new Set(), VOCAB).days).toEqual([]);
+    expect(reconcile(s, '2026-09-24', WEEKDAYS, new Set(), POL).days).toEqual([]);
   });
 });
 
 describe('el motor no sabe de qué objetivo habla', () => {
   it('redacta los eventos con el vocabulario que recibe', () => {
     const base = { ...initialState('2026-W39', '2026-09-23'), dogs: 3 };
-    const ingles = vocabularyFor('english');
+    const ingles = policyFor('english');
 
+    // 30 minutos: el umbral de Inglés. Con 20 no habría recompensa que redactar.
     const premio = applyAction(
       base,
-      { kind: 'settle', dayKey: '2026-09-24', minutesToday: 20, alreadyAwarded: 0 },
+      { kind: 'settle', dayKey: '2026-09-24', minutesToday: 30, alreadyAwarded: 0 },
       ingles,
     );
-    expect(premio.events[0]?.reason).toBe('20 min de inglés');
+    expect(premio.events[0]?.reason).toBe('30 min de inglés');
 
     const fallo = applyAction(base, { kind: 'miss', dayKey: '2026-09-24' }, ingles);
     expect(fallo.events[0]?.reason).toBe('Día programado sin practicar inglés');
@@ -397,7 +398,7 @@ describe('el motor no sabe de qué objetivo habla', () => {
     const base = initialState('2026-W39', '2026-09-23');
     const razones = (['reading', 'english', 'study'] as const).map(
       (tipo) =>
-        applyAction(base, { kind: 'miss', dayKey: '2026-09-24' }, vocabularyFor(tipo))
+        applyAction(base, { kind: 'miss', dayKey: '2026-09-24' }, policyFor(tipo))
           .events[0]?.reason,
     );
     // Tres textos distintos: el motor no impone ninguno.
@@ -409,11 +410,42 @@ describe('el motor no sabe de qué objetivo habla', () => {
     ]);
   });
 
-  it('pero el resultado numérico es idéntico, venga el vocabulario que venga', () => {
+  it('la PENALIZACIÓN no depende del tipo: un día fallado cuesta lo mismo', () => {
     const base = { ...initialState('2026-W39', '2026-09-23'), dogs: 4 };
-    const accion = { kind: 'settle' as const, dayKey: '2026-09-24', minutesToday: 25, alreadyAwarded: 0 };
-    const a = applyAction(base, accion, vocabularyFor('reading')).state;
-    const b = applyAction(base, accion, vocabularyFor('study')).state;
-    expect(a).toEqual(b);
+    const accion = { kind: 'miss' as const, dayKey: '2026-09-24' };
+    const estados = (['reading', 'english', 'study'] as const).map(
+      (tipo) => applyAction(base, accion, policyFor(tipo)).state,
+    );
+    expect(estados[0]).toEqual(estados[1]);
+    expect(estados[1]).toEqual(estados[2]);
+  });
+
+  it('la RECOMPENSA sí: los mismos minutos valen distinto en cada curva', () => {
+    // `adopted: 140` para que el aforo sea el máximo (21) y ninguna recompensa
+    // desborde: el motor deriva `capacity` de `adopted`, así que fijarla a mano
+    // no sirve de nada.
+    const base = { ...initialState('2026-W39', '2026-09-23'), dogs: 1, adopted: 140, capacity: 21 };
+    const settle = (minutos: number, tipo: 'reading' | 'english' | 'study') =>
+      applyAction(
+        base,
+        { kind: 'settle', dayKey: '2026-09-24', minutesToday: minutos, alreadyAwarded: 0 },
+        policyFor(tipo),
+      ).state.dogs - base.dogs;
+
+    // 25 minutos: una buena sesión de lectura, insuficiente para inglés.
+    expect(settle(25, 'reading')).toBe(7);
+    expect(settle(25, 'english')).toBe(0);
+
+    // 30: tope de lectura, umbral de inglés.
+    expect(settle(30, 'reading')).toBe(11);
+    expect(settle(30, 'english')).toBe(1);
+
+    // 60: lectura ya no crece; inglés sí.
+    expect(settle(60, 'reading')).toBe(11);
+    expect(settle(60, 'english')).toBe(3);
+
+    // Inglés y Estudio comparten curva.
+    expect(settle(60, 'study')).toBe(settle(60, 'english'));
   });
 });
+

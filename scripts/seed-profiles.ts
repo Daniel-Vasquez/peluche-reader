@@ -36,9 +36,10 @@ export interface SeedGoal {
 /**
  * Los tres perfiles.
  *
- * El umbral que decide si un día cuenta es `GAME.BASE_MINUTES` (10): por debajo,
- * un día programado cierra como `missed` y cuesta un perrito. Las cifras de aquí
- * están elegidas contra ese umbral, no al azar.
+ * El umbral que decide si un día cuenta **depende del tipo**: 10 minutos en
+ * Lectura, 30 en Inglés y Estudio (`rewardCurveFor(type).baseMinutes`). Por
+ * debajo, un día programado cierra como `missed` y cuesta un perrito. Las cifras
+ * de aquí están elegidas contra el umbral de cada uno, no al azar.
  */
 export const SEED_GOALS: SeedGoal[] = [
   {
@@ -66,7 +67,7 @@ export const SEED_GOALS: SeedGoal[] = [
     goalId: 'english',
     label: 'Inglés',
     scheduledDays: [2, 4, 6],
-    dailyGoalMinutes: 20,
+    dailyGoalMinutes: 30,
     metadata: { type: 'english', courseName: 'Duolingo', level: 'B1' },
     contextLabel: 'Duolingo · B1',
     hour: 18,
@@ -93,22 +94,25 @@ export const SEED_GOALS: SeedGoal[] = [
 
       const ordinal = Math.floor(i / 7) * 3 + slot;
       if ([2, 9, 14, 20].includes(ordinal)) return 0;
-      if ([5, 17].includes(ordinal)) return 7;
-      return [24, 20, 30, 22, 26][ordinal % 5]!;
+      // Dos sesiones cortas que se quedan por debajo del umbral de 30 y sí
+      // penalizan. Antes eran de 7 minutos, contra un umbral de 10.
+      if ([5, 17].includes(ordinal)) return 22;
+      // Por encima de 30, con algún 45 que da el segundo perrito.
+      return [34, 30, 45, 32, 38][ordinal % 5]!;
     },
   },
   {
     goalId: 'study',
     label: 'Estudio',
     scheduledDays: [1, 3, 5],
-    dailyGoalMinutes: 25,
+    dailyGoalMinutes: 45,
     metadata: { type: 'study', subject: 'Cálculo II', topic: 'Integrales por partes' },
     contextLabel: 'Cálculo II · Integrales por partes',
     hour: 20,
     activeFrom: STUDY_STARTS_ON,
-    // Sesiones largas y recién empezadas. Pasados los 30 minutos la recompensa
-    // ya está en su tope, así que esto no desequilibra el refugio: solo da
-    // relieve a la gráfica de minutos.
+    // Sesiones largas y recién empezadas. Con la curva lineal de Estudio estos
+    // minutos sí crecen la recompensa (45→2, 60→3, 75→4), así que además de dar
+    // relieve a la gráfica llenan su refugio.
     minutesFor: (day, i) => {
       if (i < STUDY_STARTS_ON) return 0;
       const weekday = isoWeekdayOfDayKey(day);

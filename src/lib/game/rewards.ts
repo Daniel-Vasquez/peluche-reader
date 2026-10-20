@@ -1,55 +1,79 @@
+import type { GoalType } from '@/lib/db/types';
 import { GAME } from './config';
 
 /**
- * Curva de recompensa. Funciones puras, sin reloj ni base de datos.
+ * Curvas de recompensa. Funciones puras, sin reloj ni base de datos.
  *
- * Regla: los primeros 10 minutos valen 1 perrito. Cada bloque extra de 5 minutos
- * vale **un perrito más que el bloque anterior**.
+ * **Cada tipo de objetivo tiene la suya**, porque no piden el mismo esfuerzo:
  *
- * | Minutos | Bloques | Perritos | Gana el bloque |
- * |--------:|--------:|---------:|---------------:|
- * |   0–9   |    —    |     0    |       —        |
- * |    10   |    0    |     1    |      +1        |
- * |    15   |    1    |     2    |      +1        |
- * |    20   |    2    |     4    |      +2        |
- * |    25   |    3    |     7    |      +3        |
- * |   30+   | 4 (tope)|    11    |      +4        |
+ * | Tipo    | Umbral | Bloque | Forma     | Minutos → perritos          |
+ * |---------|-------:|-------:|-----------|-----------------------------|
+ * | Lectura |  10    |   5    | ascendente| 10→1, 15→2, 20→4, 25→7, 30→11 (tope) |
+ * | Inglés  |  30    |  15    | lineal    | 30→1, 45→2, 60→3, 75→4, …   |
+ * | Estudio |  30    |  15    | lineal    | igual que Inglés            |
+ *
+ * El umbral es **también el mínimo de supervivencia**: un día programado que
+ * cierra sin perritos ganados es un día fallado (ver `completedDayKeysBetween`),
+ * así que con 29 minutos de inglés se pierde un perrito y con 30 no.
+ *
+ * Por qué lectura es convexa y las otras lineales: diez minutos de lectura son
+ * un hábito que hay que arrancar, y la curva ascendente paga el "un bloque más".
+ * Media hora de inglés o de estudio ya es una sesión seria; ahí la dificultad
+ * está en llegar al umbral, no en estirarlo.
  */
 
-/**
- * Perritos totales que corresponden a `minutes` leídos en un mismo día.
- *
- * Se calcula sobre el **total del día**, no por sesión: así tres sesiones de
- * 7 minutos no valen 0.
- */
-export function dogsForMinutes(minutes: number): number {
-  if (!Number.isFinite(minutes) || minutes < GAME.BASE_MINUTES) return 0;
-  const blocks = Math.min(
-    Math.floor((minutes - GAME.BASE_MINUTES) / GAME.BLOCK_MINUTES),
-    GAME.MAX_BLOCKS,
-  );
-  return 1 + (blocks * (blocks + 1)) / 2;
+export interface RewardCurve {
+  /** Umbral de recompensa y mínimo de supervivencia, en minutos. */
+  baseMinutes: number;
+  /** Perritos totales por los minutos acumulados **del día**. */
+  dogsForMinutes(minutes: number): number;
+  /** Escalones para pintar en la interfaz. */
+  steps: readonly { minutes: number; dogs: number }[];
+  /** Siguiente escalón, o `null` si ya no crece. */
+  nextStep(minutes: number): { atMinutes: number; dogs: number; minutesAway: number } | null;
 }
 
-/** Minutos del último escalón que puntúa. Más allá, la recompensa no crece. */
-export const MAX_REWARD_MINUTES =
-  GAME.BASE_MINUTES + GAME.MAX_BLOCKS * GAME.BLOCK_MINUTES;
+/** Cuántos escalones enseña la interfaz cuando la curva no tiene tope. */
+const ESCALONES_SIN_TOPE = 4;
 
-/** Los escalones de la curva, para pintarlos en la interfaz. */
-export const REWARD_STEPS: readonly { minutes: number; dogs: number }[] =
-  Array.from({ length: GAME.MAX_BLOCKS + 1 }, (_, i) => {
-    const minutes = GAME.BASE_MINUTES + i * GAME.BLOCK_MINUTES;
+function construir(cfg: (typeof GAME.REWARDS)[GoalType]): RewardCurve {
+  const { shape, baseMinutes, blockMinutes, maxBlocks } = cfg;
+
+  const dogsForMinutes = (minutes: number): number => {
+    if (!Number.isFinite(minutes) || minutes < baseMinutes) return 0;
+    const brutos = Math.floor((minutes - baseMinutes) / blockMinutes);
+    const blocks = maxBlocks === null ? brutos : Math.min(brutos, maxBlocks);
+    // Ascendente: 1 + 1 + 2 + 3 + … = 1 + n(n+1)/2.  Lineal: 1 + n.
+    return shape === 'ascending' ? 1 + (blocks * (blocks + 1)) / 2 : 1 + blocks;
+  };
+
+  const cuantos = maxBlocks === null ? ESCALONES_SIN_TOPE : maxBlocks;
+  const steps = Array.from({ length: cuantos + 1 }, (_, i) => {
+    const minutes = baseMinutes + i * blockMinutes;
     return { minutes, dogs: dogsForMinutes(minutes) };
   });
 
-/**
- * Siguiente escalón por alcanzar, o `null` si ya está en el tope.
- * Alimenta el "te faltan 3 min para 2 perritos más" de la UI.
- */
-export function nextRewardStep(
-  minutes: number,
-): { atMinutes: number; dogs: number; minutesAway: number } | null {
-  const step = REWARD_STEPS.find((s) => minutes < s.minutes);
-  if (!step) return null;
-  return { atMinutes: step.minutes, dogs: step.dogs, minutesAway: step.minutes - minutes };
+  const nextStep = (minutes: number) => {
+    if (minutes < baseMinutes) {
+      return { atMinutes: baseMinutes, dogs: dogsForMinutes(baseMinutes), minutesAway: baseMinutes - minutes };
+    }
+    // Sin tope la curva sigue creciendo, así que el siguiente escalón se calcula
+    // en vez de buscarse en la lista, que es finita solo para la interfaz.
+    const bloquesHechos = Math.floor((minutes - baseMinutes) / blockMinutes);
+    if (maxBlocks !== null && bloquesHechos >= maxBlocks) return null;
+    const atMinutes = baseMinutes + (bloquesHechos + 1) * blockMinutes;
+    return { atMinutes, dogs: dogsForMinutes(atMinutes), minutesAway: atMinutes - minutes };
+  };
+
+  return { baseMinutes, dogsForMinutes, steps, nextStep };
+}
+
+const CURVAS: Record<GoalType, RewardCurve> = {
+  reading: construir(GAME.REWARDS.reading),
+  english: construir(GAME.REWARDS.english),
+  study: construir(GAME.REWARDS.study),
+};
+
+export function rewardCurveFor(type: GoalType): RewardCurve {
+  return CURVAS[type];
 }

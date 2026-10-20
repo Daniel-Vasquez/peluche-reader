@@ -16,6 +16,11 @@ interface Props {
   metadata: GoalMetadata;
   isPaused: boolean;
   goalOptions: readonly number[];
+  /**
+   * Minutos que salvan el día en ESTE objetivo: 10 en Lectura, 30 en Inglés y
+   * Estudio. Llega resuelto del servidor, donde vive el balance.
+   */
+  survivalMinutes: number;
 }
 
 /**
@@ -34,6 +39,7 @@ export default function GoalSettingsForm({
   metadata: initialMetadata,
   isPaused: initialPaused,
   goalOptions,
+  survivalMinutes,
 }: Props) {
   const [label, setLabel] = useState(initialLabel);
   const [days, setDays] = useState<IsoWeekday[]>(initialDays);
@@ -244,7 +250,7 @@ export default function GoalSettingsForm({
         <p className="mt-1 mb-3 text-sm text-text-soft">
           {isPaused
             ? 'Se guardan para cuando reanudes: mientras esté en pausa no te cuestan perritos.'
-            : 'Cada día elegido en el que no cumplas te cuesta un perrito de este refugio.'}
+            : `Cada día elegido en el que no llegues a ${survivalMinutes} minutos te cuesta un perrito de este refugio.`}
         </p>
 
         <div className="flex flex-wrap gap-2">
@@ -281,7 +287,7 @@ export default function GoalSettingsForm({
       <Field
         id={`${goalId}-goal`}
         label="Meta por sesión"
-        hint="Solo orienta el cronómetro; no cambia las recompensas."
+        hint={`Solo orienta el cronómetro. Lo que de verdad cuenta son los ${survivalMinutes} minutos que salvan el día.`}
       >
         {(field) => (
           <select

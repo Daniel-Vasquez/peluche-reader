@@ -1,9 +1,8 @@
 import type { DayOutcome, GameEventDoc, GameStateDoc } from '@/lib/db/types';
 import { dayKeysBetween, isoWeekdayOfDayKey, weekKeyFromDayKey, type IsoWeekday } from '@/lib/time';
-import type { GoalVocabulary } from './vocabulary';
 import { GAME } from './config';
 import { effectivePenalty } from './penalties';
-import { dogsForMinutes } from './rewards';
+import type { GoalPolicy } from './policy';
 
 /**
  * Reducer del estado de gamificación. **Todo aquí es puro**: mismo estado más
@@ -71,7 +70,7 @@ export function initialState(weekKey: string, dayKey: string): GameState {
 export function applyAction(
   state: GameState,
   action: GameAction,
-  vocab: GoalVocabulary,
+  policy: GoalPolicy,
 ): ApplyResult {
   const s: GameState = { ...state };
   const events: NewEvent[] = [];
@@ -105,7 +104,7 @@ export function applyAction(
           dayKey: action.dayKey,
           type: 'penalty',
           delta: -loss,
-          reason: vocab.missed,
+          reason: policy.vocab.missed,
           dogsAfter: s.dogs,
         });
       }
@@ -117,7 +116,7 @@ export function applyAction(
     case 'settle': {
       // Idempotencia: solo se entrega la DIFERENCIA con lo ya otorgado hoy.
       // Por eso liquidar dos veces la misma lectura no duplica la recompensa.
-      const target = dogsForMinutes(action.minutesToday);
+      const target = policy.rewards.dogsForMinutes(action.minutesToday);
       const delta = target - action.alreadyAwarded;
       if (delta > 0) {
         const cap = capacityFor(s.adopted);
@@ -129,7 +128,7 @@ export function applyAction(
           dayKey: action.dayKey,
           type: 'reward',
           delta,
-          reason: `${action.minutesToday} min ${vocab.activity}`,
+          reason: `${action.minutesToday} min ${policy.vocab.activity}`,
           dogsAfter: s.dogs,
         });
 
@@ -162,7 +161,10 @@ export function applyAction(
  * forma perezosa la próxima vez que el usuario entra.
  *
  * @param scheduledDays Días comprometidos, ISO 1..7.
- * @param completedDays `dayKey`s con lectura suficiente (`dogsAwarded > 0`).
+ * @param completedDays `dayKey`s que ganaron perritos (`dogsAwarded > 0`). Qué
+ *   cuenta como suficiente lo decide la curva del tipo: 10 minutos en Lectura,
+ *   30 en Inglés y Estudio.
+ * @param policy       Vocabulario y curva de recompensa del tipo de objetivo.
  * @param isPaused     Con el objetivo en pausa, un día programado sin cumplir se
  *   resuelve como descanso: ni resta perritos ni rompe la racha. Es opcional
  *   porque reconciliar un objetivo activo es el caso normal, pero **el llamador
@@ -173,7 +175,7 @@ export function reconcile(
   todayKey: string,
   scheduledDays: readonly IsoWeekday[],
   completedDays: ReadonlySet<string>,
-  vocab: GoalVocabulary,
+  policy: GoalPolicy,
   isPaused = false,
 ): ReconcileResult {
   let s = state;
@@ -185,7 +187,7 @@ export function reconcile(
 
     const weekKey = weekKeyFromDayKey(day);
     if (weekKey !== s.weekKey) {
-      const rolled = applyAction(s, { kind: 'rollover', weekKey, dayKey: day }, vocab);
+      const rolled = applyAction(s, { kind: 'rollover', weekKey, dayKey: day }, policy);
       s = rolled.state;
       events.push(...rolled.events);
     }
@@ -225,7 +227,7 @@ export function reconcile(
     const applied = applyAction(
       s,
       { kind: penaliza ? 'miss' : 'rest', dayKey: day },
-      vocab,
+      policy,
     );
     s = applied.state;
     events.push(...applied.events);

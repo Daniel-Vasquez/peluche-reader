@@ -3,7 +3,8 @@ import ArchiveToggle from '@/components/goals/ArchiveToggle';
 import GoalIcon from '@/components/icons/GoalIcon.astro';
 import GoalSettingsForm from '@/components/settings/GoalSettingsForm';
 import { goalContext, type GoalDoc } from '@/lib/db/types';
-import { GOAL_OPTIONS } from '@/lib/repos/profile';
+import { rewardCurveFor } from '@/lib/game/rewards';
+import { goalOptionsFor } from '@/lib/repos/profile';
 import { WEEKDAY_LABELS } from '@/lib/time';
 
 /**
@@ -79,7 +80,8 @@ const dias =
       dailyGoalMinutes={goal.dailyGoalMinutes}
       metadata={goal.metadata}
       isPaused={goal.isPaused}
-      goalOptions={GOAL_OPTIONS}
+      goalOptions={goalOptionsFor(goal.type)}
+      survivalMinutes={rewardCurveFor(goal.type).baseMinutes}
     />
 
     {/*

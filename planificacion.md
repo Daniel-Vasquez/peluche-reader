@@ -3973,6 +3973,76 @@ adoptado y que su fondo difiere de los otros dos grupos, que la leyenda se encog
 cuando un estado no aplica, que cada objetivo pinta su propio refugio, y que el
 inicio conserva su contador escueto y su semana de días.
 
+## G.8 Addendum · Una curva de recompensa por tipo de objetivo
+
+Lectura conserva su curva. Inglés y Estudio pasan a **umbral de 30 minutos y un
+perrito por cada bloque de 15**, sin tope.
+
+| Tipo | Umbral | Bloque | Forma | Minutos → perritos |
+|---|---:|---:|---|---|
+| Lectura | 10 | 5 | ascendente | 10→1, 15→2, 20→4, 25→7, 30→11 (tope) |
+| Inglés · Estudio | 30 | 15 | lineal | 30→1, 45→2, 60→3, 75→4, … |
+
+### El umbral y el mínimo de supervivencia son el mismo número
+
+Un día programado cuenta como cumplido si ganó perritos
+(`completedDayKeysBetween` filtra por `dogsAwarded > 0`). Así que subir el umbral
+de recompensa **ya sube el mínimo de supervivencia**: no hizo falta una segunda
+constante, y por construcción no pueden contradecirse.
+
+De ahí sale una decisión que el encargo dejaba abierta. Decía a la vez "30
+minutos para no perder un perrito" y "30 min = 0 extra"; si 30 minutos pagaran 0,
+el día no contaría como cumplido y penalizaría igual. Se resuelve como en
+Lectura: **el umbral paga 1 perrito** y los extras van encima. Los "extras" del
+encargo cuadran exactamente (45→1, 60→2, 75→3).
+
+### Dónde se refactorizó
+
+El motor **dejó de conocer la curva**. `applyAction` y `reconcile` recibían ya el
+vocabulario del tipo; ahora reciben una `GoalPolicy` que lleva el vocabulario y la
+curva juntos. Un solo parámetro en vez de dos, y el reducer deja de importar
+`rewards.ts`: la política es del tipo, no del motor.
+
+Los números siguen en `game/config.ts` (convención 7), ahora como `GAME.REWARDS`
+indexado por tipo.
+
+### Lo que el cambio arrastró
+
+Subir el umbral de Inglés y Estudio dejó incoherentes tres cosas que había que
+arreglar, no ignorar:
+
+- **Las metas por defecto** eran 20 y 25 minutos: la app habría dicho "meta 20
+  min" el mismo día en que 20 minutos cuestan un perrito. Pasan a 30.
+- **`GOAL_OPTIONS`** era una lista suelta `[10,15,20,25,30]` cuyo comentario ya
+  decía "coinciden con los escalones de recompensa". Ahora **se derivan** de la
+  curva (`goalOptionsFor(type)`), que es lo que ese comentario prometía: Lectura
+  ofrece 10–30, Inglés y Estudio 30–90. La validación del endpoint pasa a hacerse
+  con el objetivo ya cargado, porque el tipo no se conoce antes.
+- **El seed**: los minutos de Inglés (20–30) quedaban casi todos por debajo del
+  umbral y su perfil "irregular" se convertía en una ruina. Se reescalan a 30–45,
+  manteniendo los seis días fallados que el perfil busca.
+
+### Interfaz
+
+Los escalones del cronómetro llegan por props desde el servidor
+(`rewardCurveFor(type).steps`) en vez de importarse como constante, y los textos
+de Ajustes leen el umbral del objetivo: «Cada día elegido en el que no llegues a
+30 minutos te cuesta un perrito».
+
+### Comprobado
+
+117 pruebas unitarias (las de Lectura intactas, más las curvas nuevas y sus
+invariantes) y 17 aserciones de extremo a extremo contra una base desechable,
+corriendo sesiones reales por la API: 20 min de lectura siguen dando 4 perritos;
+29 min de inglés dan 0 y no salvan el día; 60 min dan 3; 45 de estudio dan 2; y un
+día de 25 minutos de inglés cierra como `missed` y cuesta un perrito.
+
+Dos pruebas antiguas afirmaban cosas que este cambio vuelve falsas y se
+reescribieron: una liquidaba 20 minutos de inglés esperando recompensa, y otra
+afirmaba que «el resultado numérico es idéntico venga el vocabulario que venga».
+Ahora se separa lo que sigue siendo cierto —la **penalización** no depende del
+tipo— de lo que ya no: la **recompensa** sí.
+
 ---
 
 # Apéndice A · Resumen del balance

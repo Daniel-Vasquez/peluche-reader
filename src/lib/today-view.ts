@@ -1,6 +1,6 @@
 import { col } from '@/lib/db/collections';
 import { goalContext, type GoalType } from '@/lib/db/types';
-import { dogsForMinutes } from '@/lib/game/rewards';
+import { rewardCurveFor } from '@/lib/game/rewards';
 import { ensureGameState, toGameState } from '@/lib/repos/gameState';
 import { listGoals } from '@/lib/repos/goals';
 import { findDayProgress } from '@/lib/repos/progress';
@@ -106,8 +106,9 @@ export async function buildTodayView(
           minutes,
           dogsAwarded: row?.dogsAwarded ?? 0,
           // "Hecho" es haber ganado perritos, no haber llegado a la meta
-          // personal: la meta orienta, el umbral es lo que cuenta.
-          completed: dogsForMinutes(minutes) > 0,
+          // personal: la meta orienta, el umbral es lo que cuenta. Y el umbral
+          // depende del tipo: 10 minutos en Lectura, 30 en Inglés y Estudio.
+          completed: rewardCurveFor(goal.type).dogsForMinutes(minutes) > 0,
         },
         shelter: { dogs: state.dogs, capacity: state.capacity, streak: state.streak },
         hasOpenSession: openSession?.goalId === goal.goalId,

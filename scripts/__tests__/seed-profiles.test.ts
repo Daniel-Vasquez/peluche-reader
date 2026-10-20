@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GAME } from '@/lib/game/config';
+import { rewardCurveFor } from '@/lib/game/rewards';
 import { addDays, isoWeekdayOfDayKey } from '@/lib/time';
 import { DAYS, SEED_GOALS, STUDY_STARTS_ON } from '../seed-profiles';
 
@@ -7,7 +7,7 @@ import { DAYS, SEED_GOALS, STUDY_STARTS_ON } from '../seed-profiles';
  * El criterio de la Tanda E pide que `npm run db:seed` produzca "tres objetivos
  * con rachas distintas". Ejecutar el seed exige Mongo, pero lo que decide si las
  * rachas salen distintas no es la base de datos: son estas funciones de minutos
- * contra el umbral de `GAME`. Eso sí se puede comprobar aquí.
+ * contra el umbral de la curva de cada tipo. Eso sí se puede comprobar aquí.
  *
  * El seed arranca 55 días antes de hoy, así que el día de la semana del primer
  * día cambia en cada ejecución. Todo lo que se afirma abajo se comprueba en las
@@ -65,7 +65,8 @@ function recorrer(goalId: string, primerDia: string): Recuento {
       continue;
     }
 
-    if (minutes >= GAME.BASE_MINUTES) r.cumplidos += 1;
+    // El umbral es el de SU curva: 10 minutos en Lectura, 30 en Inglés y Estudio.
+    if (minutes >= rewardCurveFor(seed.metadata.type).baseMinutes) r.cumplidos += 1;
     else {
       r.fallados += 1;
       if (minutes > 0) r.insuficientes += 1;

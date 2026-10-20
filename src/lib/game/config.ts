@@ -21,12 +21,26 @@ export const GAME = {
   ADOPTIONS_PER_CAPACITY: 10,
   MAX_CAPACITY: 21,
 
-  /** Umbral mínimo para ganar el primer perrito. */
-  BASE_MINUTES: 10,
-  /** Tamaño de cada bloque adicional. */
-  BLOCK_MINUTES: 5,
-  /** Bloques adicionales que puntúan (4 → tope de recompensa a los 30 min). */
-  MAX_BLOCKS: 4,
+  /**
+   * Curva de recompensa **por tipo de objetivo**.
+   *
+   * `baseMinutes` es a la vez el umbral de recompensa y el **mínimo de
+   * supervivencia**: por debajo no se gana ni un perrito, y un día programado
+   * sin ganar perritos es un día fallado. Las dos cosas son el mismo número a
+   * propósito, para que no puedan contradecirse.
+   *
+   * - `ascending`: cada bloque vale un perrito más que el anterior (1, 2, 4, 7, 11).
+   *   Es la curva de lectura: convexa, premia alargar la sesión.
+   * - `linear`: un perrito por bloque (1, 2, 3, 4…). Inglés y Estudio piden
+   *   sesiones largas, así que el salto está en el umbral y no en la pendiente.
+   *
+   * `maxBlocks: null` = sin tope.
+   */
+  REWARDS: {
+    reading: { shape: 'ascending', baseMinutes: 10, blockMinutes: 5, maxBlocks: 4 },
+    english: { shape: 'linear', baseMinutes: 30, blockMinutes: 15, maxBlocks: null },
+    study: { shape: 'linear', baseMinutes: 30, blockMinutes: 15, maxBlocks: null },
+  },
 
   /** Perritos perdidos por cada día programado sin leer. */
   PENALTY_PER_MISS: 1,

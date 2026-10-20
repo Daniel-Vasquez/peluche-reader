@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { badRequest, json, notFound, readJson, unauthorized } from '@/lib/api';
 import { syncGoal } from '@/lib/game/service';
 import { findGoal, updateGoal } from '@/lib/repos/goals';
-import { GOAL_OPTIONS } from '@/lib/repos/profile';
+import { goalOptionsFor } from '@/lib/repos/profile';
 import type { IsoWeekday } from '@/lib/time';
 
 export const prerender = false;
@@ -48,13 +48,14 @@ const PatchSchema = z.object({
     .max(7)
     .transform((days) => [...new Set(days)].sort((a, b) => a - b) as IsoWeekday[])
     .optional(),
+  /*
+   * Solo se valida que sea un entero: QUÉ metas son válidas depende del tipo del
+   * objetivo, y el tipo no se conoce hasta cargarlo de la base. La comprobación
+   * contra la lista está más abajo, ya con el objetivo delante.
+   */
   dailyGoalMinutes: z
     .number({ message: 'La meta debe ser un número de minutos.' })
     .int('La meta debe ser un número entero de minutos.')
-    .refine(
-      (m) => (GOAL_OPTIONS as readonly number[]).includes(m),
-      `La meta debe ser una de: ${GOAL_OPTIONS.join(', ')} minutos.`,
-    )
     .optional(),
   metadata: MetadataSchema.optional(),
   /**
@@ -85,6 +86,13 @@ export const PATCH: APIRoute = async ({ locals, params, request }) => {
   // y dejar el metadato incoherente con su tipo.
   if (parsed.data.metadata && parsed.data.metadata.type !== goal.type) {
     return badRequest('Los metadatos no corresponden al tipo de este objetivo.');
+  }
+
+  // Las metas válidas son los escalones de la curva de SU tipo: 10–30 en
+  // Lectura, 30–90 en Inglés y Estudio.
+  const opciones = goalOptionsFor(goal.type);
+  if (parsed.data.dailyGoalMinutes !== undefined && !opciones.includes(parsed.data.dailyGoalMinutes)) {
+    return badRequest(`La meta debe ser una de: ${opciones.join(', ')} minutos.`);
   }
 
   /*

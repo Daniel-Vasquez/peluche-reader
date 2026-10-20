@@ -6,6 +6,7 @@ import SessionTimer from '@/components/SessionTimer';
 import Shelter from '@/components/Shelter';
 import { goalContext } from '@/lib/db/types';
 import { syncGoal } from '@/lib/game/service';
+import { rewardCurveFor } from '@/lib/game/rewards';
 import { vocabularyFor } from '@/lib/game/vocabulary';
 import { findGoal } from '@/lib/repos/goals';
 import { ensureProfile } from '@/lib/repos/profile';
@@ -94,6 +95,7 @@ const daySeconds = await completedSecondsForDay(ref, todayKey);
           activity={vocabularyFor(goal.type).activity}
           contextLabel={goalContext(goal.metadata)}
           dailyGoalMinutes={goal.dailyGoalMinutes}
+          rewardSteps={rewardCurveFor(goal.type).steps}
           minSessionSeconds={MIN_SESSION_SECONDS}
           initialDaySeconds={daySeconds}
         />
